@@ -1,0 +1,1257 @@
+openapi: 3.0.0
+info:
+  title: AWS Services API
+  version: 1.0.0
+  description: Comprehensive API for managing AWS services including Lambda, API Gateway, IAM, SNS, SQS, and Step Functions
+
+servers:
+  - url: /api
+    description: API v1
+
+components:
+  securitySchemes:
+    AWS4-HMAC-SHA256:
+      type: apiKey
+      in: header
+      name: Authorization
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  responses:
+    BadRequestError:
+      description: Invalid request parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    UnauthorizedError:
+      description: AWS Authentication Failed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    NotFoundError:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    
+    InternalError:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        timestamp:
+          type: string
+
+    # S3 Schemas
+    S3Bucket:
+      type: object
+      properties:
+        Name:
+          type: string
+        CreationDate:
+          type: string
+        Region:
+          type: string
+        Versioning:
+          type: boolean
+        Encryption:
+          type: string
+          enum: [AES256, aws:kms]
+
+    # Lambda Schemas
+    LambdaFunction:
+      type: object
+      properties:
+        FunctionName:
+          type: string
+        Runtime:
+          type: string
+          enum: [nodejs18.x, python3.9, java11, dotnet6]
+        Handler:
+          type: string
+        Role:
+          type: string
+        Code:
+          type: object
+          properties:
+            ZipFile:
+              type: string
+            S3Bucket:
+              type: string
+            S3Key:
+              type: string
+        Environment:
+          type: object
+          properties:
+            Variables:
+              type: object
+              additionalProperties:
+                type: string
+        MemorySize:
+          type: integer
+          minimum: 128
+          maximum: 10240
+        Timeout:
+          type: integer
+          minimum: 1
+          maximum: 900
+        Tags:
+          type: object
+          additionalProperties:
+            type: string
+
+    # API Gateway Schemas
+    ApiGateway:
+      type: object
+      properties:
+        Name:
+          type: string
+        Description:
+          type: string
+        EndpointType:
+          type: string
+          enum: [REGIONAL, EDGE, PRIVATE]
+        Protocol:
+          type: string
+          enum: [HTTP, REST, WEBSOCKET]
+        Stage:
+          type: string
+        Resources:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApiResource'
+
+    ApiResource:
+      type: object
+      properties:
+        Path:
+          type: string
+        Method:
+          type: string
+          enum: [GET, POST, PUT, DELETE, PATCH]
+        Integration:
+          type: object
+          properties:
+            Type:
+              type: string
+              enum: [AWS, HTTP, MOCK, AWS_PROXY, HTTP_PROXY]
+            Uri:
+              type: string
+
+    # IAM Schemas
+    IAMRole:
+      type: object
+      properties:
+        RoleName:
+          type: string
+        Description:
+          type: string
+        AssumeRolePolicyDocument:
+          type: object
+        MaxSessionDuration:
+          type: integer
+        Path:
+          type: string
+        Tags:
+          type: array
+          items:
+            type: object
+            properties:
+              Key:
+                type: string
+              Value:
+                type: string
+        ManagedPolicyArns:
+          type: array
+          items:
+            type: string
+        InlinePolicies:
+          type: object
+          additionalProperties:
+            type: object
+
+    # SNS Schemas
+    SNSTopic:
+      type: object
+      properties:
+        Name:
+          type: string
+        DisplayName:
+          type: string
+        Policy:
+          type: object
+        DeliveryPolicy:
+          type: object
+        Tags:
+          type: array
+          items:
+            type: object
+            properties:
+              Key:
+                type: string
+              Value:
+                type: string
+
+    SNSSubscription:
+      type: object
+      properties:
+        TopicArn:
+          type: string
+        Protocol:
+          type: string
+          enum: [http, https, email, email-json, sms, sqs, application, lambda]
+        Endpoint:
+          type: string
+        FilterPolicy:
+          type: object
+
+    # SQS Schemas
+    SQSQueue:
+      type: object
+      properties:
+        QueueName:
+          type: string
+        DelaySeconds:
+          type: integer
+        MaxMessageSize:
+          type: integer
+        MessageRetentionPeriod:
+          type: integer
+        VisibilityTimeout:
+          type: integer
+        Policy:
+          type: object
+        Tags:
+          type: array
+          items:
+            type: object
+            properties:
+              Key:
+                type: string
+              Value:
+                type: string
+
+    # Step Functions Schemas
+    StateMachine:
+      type: object
+      properties:
+        Name:
+          type: string
+        Definition:
+          type: object
+        RoleArn:
+          type: string
+        Type:
+          type: string
+          enum: [STANDARD, EXPRESS]
+        LoggingConfiguration:
+          type: object
+          properties:
+            Level:
+              type: string
+              enum: [ALL, ERROR, FATAL, OFF]
+            IncludeExecutionData:
+              type: boolean
+        Tags:
+          type: array
+          items:
+            type: object
+            properties:
+              Key:
+                type: string
+              Value:
+                type: string
+
+    # DynamoDB Schemas
+    DynamoDBTable:
+      type: object
+      required:
+        - TableName
+        - PartitionKey
+      properties:
+        TableName:
+          type: string
+          pattern: '^[a-zA-Z0-9_.-]+$'
+          minLength: 3
+          maxLength: 255
+        PartitionKey:
+          type: object
+          required:
+            - name
+            - type
+          properties:
+            name:
+              type: string
+            type:
+              type: string
+              enum: [String, Number, Binary]
+        SortKey:
+          type: object
+          required:
+            - name
+            - type
+          properties:
+            name:
+              type: string
+            type:
+              type: string
+              enum: [String, Number, Binary]
+        BillingMode:
+          type: string
+          enum: [PROVISIONED, PAY_PER_REQUEST]
+          default: PAY_PER_REQUEST
+        ProvisionedThroughput:
+          type: object
+          properties:
+            ReadCapacityUnits:
+              type: integer
+              minimum: 1
+            WriteCapacityUnits:
+              type: integer
+              minimum: 1
+        Tags:
+          type: array
+          items:
+            type: object
+            properties:
+              Key:
+                type: string
+              Value:
+                type: string
+
+    DynamoDBItem:
+      type: object
+      required:
+        - TableName
+        - Item
+      properties:
+        TableName:
+          type: string
+        Item:
+          type: object
+          additionalProperties:
+            oneOf:
+              - type: string
+              - type: number
+              - type: boolean
+              - type: object
+                properties:
+                  S:
+                    type: string
+                  N:
+                    type: string
+                  B:
+                    type: string
+                  BOOL:
+                    type: boolean
+                  NULL:
+                    type: boolean
+                  M:
+                    type: object
+                  L:
+                    type: array
+                  SS:
+                    type: array
+                    items:
+                      type: string
+                  NS:
+                    type: array
+                    items:
+                      type: string
+                  BS:
+                    type: array
+                    items:
+                      type: string
+
+    DynamoDBUpdateItem:
+      type: object
+      required:
+        - TableName
+        - Key
+        - UpdateExpression
+      properties:
+        TableName:
+          type: string
+        Key:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DynamoDBAttributeValue'
+        UpdateExpression:
+          type: string
+        ExpressionAttributeNames:
+          type: object
+          additionalProperties:
+            type: string
+        ExpressionAttributeValues:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/DynamoDBAttributeValue'
+        ConditionExpression:
+          type: string
+        ReturnValues:
+          type: string
+          enum: [NONE, ALL_OLD, UPDATED_OLD, ALL_NEW, UPDATED_NEW]
+          default: ALL_NEW
+
+    DynamoDBAttributeValue:
+      oneOf:
+        - type: object
+          properties:
+            S:
+              type: string
+        - type: object
+          properties:
+            N:
+              type: string
+        - type: object
+          properties:
+            B:
+              type: string
+        - type: object
+          properties:
+            BOOL:
+              type: boolean
+        - type: object
+          properties:
+            NULL:
+              type: boolean
+        - type: object
+          properties:
+            M:
+              type: object
+              additionalProperties:
+                $ref: '#/components/schemas/DynamoDBAttributeValue'
+        - type: object
+          properties:
+            L:
+              type: array
+              items:
+                $ref: '#/components/schemas/DynamoDBAttributeValue'
+        - type: object
+          properties:
+            SS:
+              type: array
+              items:
+                type: string
+        - type: object
+          properties:
+            NS:
+              type: array
+              items:
+                type: string
+        - type: object
+          properties:
+            BS:
+              type: array
+              items:
+                type: string
+
+paths:
+  /s3:
+    get:
+      summary: List S3 buckets
+      operationId: listBuckets
+      responses:
+        '200':
+          description: Successfully retrieved buckets
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  buckets:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/S3Bucket'
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+                  region:
+                    type: string
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      summary: Create S3 bucket
+      operationId: createBucket
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/S3Bucket'
+      responses:
+        '201':
+          description: Bucket created successfully
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /lambda/functions:
+    get:
+      summary: List Lambda functions
+      operationId: listFunctions
+      responses:
+        '200':
+          description: Successfully retrieved Lambda functions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  functions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LambdaFunction'
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      summary: Create Lambda function
+      operationId: createFunction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LambdaFunction'
+      responses:
+        '201':
+          description: Function created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LambdaFunction'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /apigateway:
+    get:
+      summary: List API Gateway APIs
+      operationId: listApis
+      responses:
+        '200':
+          description: Successfully retrieved APIs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  apis:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ApiGateway'
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      summary: Create API Gateway
+      operationId: createApi
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApiGateway'
+      responses:
+        '201':
+          description: API Gateway created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiGateway'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /iam/roles:
+    get:
+      summary: List IAM roles
+      operationId: listRoles
+      responses:
+        '200':
+          description: Successfully retrieved roles
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  roles:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/IAMRole'
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      summary: Create IAM role
+      operationId: createRole
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IAMRole'
+      responses:
+        '201':
+          description: Role created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IAMRole'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sns/topics:
+    get:
+      summary: List SNS topics
+      operationId: listTopics
+      responses:
+        '200':
+          description: Successfully retrieved topics
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  topics:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SNSTopic'
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      summary: Create SNS topic
+      operationId: createTopic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SNSTopic'
+      responses:
+        '201':
+          description: Topic created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SNSTopic'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sns/subscriptions:
+    post:
+      summary: Create SNS subscription
+      operationId: subscribe
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SNSSubscription'
+      responses:
+        '201':
+          description: Subscription created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SNSSubscription'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /sqs/queues:
+    get:
+      summary: List SQS queues
+      operationId: listQueues
+      responses:
+        '200':
+          description: Successfully retrieved queues
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  queues:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SQSQueue'
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      summary: Create SQS queue
+      operationId: createQueue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SQSQueue'
+      responses:
+        '201':
+          description: Queue created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SQSQueue'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /stepfunctions/state-machines:
+    get:
+      summary: List Step Functions state machines
+      operationId: listStateMachines
+      responses:
+        '200':
+          description: Successfully retrieved state machines
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  stateMachines:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StateMachine'
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    post:
+      summary: Create Step Functions state machine
+      operationId: createStateMachine
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StateMachine'
+      responses:
+        '201':
+          description: State machine created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StateMachine'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /dynamodb/tables:
+    get:
+      summary: List DynamoDB tables
+      operationId: listTables
+      responses:
+        '200':
+          description: Successfully retrieved tables
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tables:
+                    type: array
+                    items:
+                      type: string
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    post:
+      summary: Create DynamoDB table
+      operationId: createTable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DynamoDBTable'
+      responses:
+        '201':
+          description: Table created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tableName:
+                    type: string
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /dynamodb/tables/{tableName}:
+    parameters:
+      - name: tableName
+        in: path
+        required: true
+        schema:
+          type: string
+    
+    get:
+      summary: Describe DynamoDB table
+      operationId: describeTable
+      responses:
+        '200':
+          description: Successfully retrieved table details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DynamoDBTable'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    put:
+      summary: Update DynamoDB table
+      operationId: updateTable
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DynamoDBTable'
+      responses:
+        '200':
+          description: Table updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DynamoDBTable'
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    delete:
+      summary: Delete DynamoDB table
+      operationId: deleteTable
+      responses:
+        '204':
+          description: Table deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /dynamodb/tables/{tableName}/items:
+    parameters:
+      - name: tableName
+        in: path
+        required: true
+        schema:
+          type: string
+    
+    get:
+      summary: Scan DynamoDB table items
+      operationId: scanItems
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+        - name: startKey
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Successfully retrieved items
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                  lastEvaluatedKey:
+                    type: string
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    post:
+      summary: Create DynamoDB item
+      operationId: createItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DynamoDBItem'
+      responses:
+        '201':
+          description: Item created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    type: object
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /dynamodb/tables/{tableName}/items/{key}:
+    parameters:
+      - name: tableName
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+    
+    get:
+      summary: Get DynamoDB item
+      operationId: getItem
+      responses:
+        '200':
+          description: Successfully retrieved item
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    type: object
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    put:
+      summary: Update DynamoDB item
+      operationId: updateItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DynamoDBUpdateItem'
+      responses:
+        '200':
+          description: Item updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  item:
+                    type: object
+                  requestId:
+                    type: string
+                  timestamp:
+                    type: string
+        '400':
+          $ref: '#/components/responses/BadRequestError'
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError'
+    
+    delete:
+      summary: Delete DynamoDB item
+      operationId: deleteItem
+      responses:
+        '204':
+          description: Item deleted successfully
+        '404':
+          $ref: '#/components/responses/NotFoundError'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '500':
+          $ref: '#/components/responses/InternalError' 
