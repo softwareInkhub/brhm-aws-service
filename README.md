@@ -88,10 +88,93 @@ The application uses a RESTful API built with Next.js API routes. Full OpenAPI d
 
 - `GET /api/dynamodb/tables` - List all tables
 - `POST /api/dynamodb/tables` - Create a new table
+  ```json
+  {
+    "TableName": "string",
+    "KeySchema": [
+      {
+        "AttributeName": "string",
+        "KeyType": "HASH" | "RANGE"
+      }
+    ],
+    "AttributeDefinitions": [
+      {
+        "AttributeName": "string",
+        "AttributeType": "S" | "N" | "B"
+      }
+    ],
+    "BillingMode": "PROVISIONED" | "PAY_PER_REQUEST",
+    "ProvisionedThroughput": {  // Required if BillingMode is PROVISIONED
+      "ReadCapacityUnits": number,
+      "WriteCapacityUnits": number
+    }
+  }
+  ```
 - `GET /api/dynamodb/tables/{tableName}` - Get table details
 - `DELETE /api/dynamodb/tables/{tableName}` - Delete a table
 - `GET /api/dynamodb/tables/{tableName}/items` - List table items
 - `POST /api/dynamodb/tables/{tableName}/items` - Create a new item
+  ```json
+  {
+    "Item": {
+      "partitionKey": "value",  // Required - must match table's partition key
+      "sortKey": "value",       // Required if table has a sort key
+      "attribute1": "value1",   // Optional additional attributes
+      "attribute2": 123,
+      "attribute3": true,
+      "attribute4": ["array", "values"],
+      "attribute5": {
+        "nested": "object"
+      }
+    }
+  }
+  ```
+
+Example Table Creation:
+```json
+{
+  "TableName": "Users",
+  "KeySchema": [
+    {
+      "AttributeName": "userId",
+      "KeyType": "HASH"
+    },
+    {
+      "AttributeName": "email",
+      "KeyType": "RANGE"
+    }
+  ],
+  "AttributeDefinitions": [
+    {
+      "AttributeName": "userId",
+      "AttributeType": "S"
+    },
+    {
+      "AttributeName": "email",
+      "AttributeType": "S"
+    }
+  ],
+  "BillingMode": "PAY_PER_REQUEST"
+}
+```
+
+Example Item Creation:
+```json
+{
+  "Item": {
+    "userId": "user123",
+    "email": "user@example.com",
+    "name": "John Doe",
+    "age": 30,
+    "isActive": true,
+    "preferences": {
+      "theme": "dark",
+      "notifications": true
+    },
+    "roles": ["user", "admin"]
+  }
+}
+```
 
 #### SNS
 
