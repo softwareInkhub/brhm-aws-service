@@ -4,7 +4,8 @@ import {
   ScanCommand,
   PutItemCommand,
   UpdateItemCommand,
-  DeleteItemCommand
+  DeleteItemCommand,
+  GetItemCommand
 } from '@aws-sdk/client-dynamodb';
 import { marshall, unmarshall } from '@aws-sdk/util-dynamodb';
 import { logger } from '@/app/utils/logger';
@@ -260,18 +261,229 @@ async function handleDeleteItem(c: any, request: NextRequest) {
   }
 }
 
-export async function GET(request: NextRequest) {
-  return validateRequest(request, handleGetItems);
+export async function GET(request: NextRequest, { params }: { params: { tableName: string } }) {
+  logger.info('DynamoDB API: Handling GET request for items', {
+    component: 'DynamoDB API',
+    data: { operation: 'GET', tableName: params.tableName }
+  });
+
+  try {
+    const { searchParams } = new URL(request.url);
+    const limit = parseInt(searchParams.get('limit') || '20');
+    const startKey = searchParams.get('startKey');
+
+    const command = new ScanCommand({
+      TableName: params.tableName,
+      Limit: limit,
+      ...(startKey && { ExclusiveStartKey: JSON.parse(startKey) }),
+    });
+
+    const response = await dynamoDBClient.send(command);
+    const items = response.Items?.map(item => unmarshall(item)) || [];
+
+    logger.info('DynamoDB API: Successfully retrieved items', {
+      component: 'DynamoDB API',
+      data: { 
+        operation: 'GET',
+        tableName: params.tableName,
+        itemCount: items.length
+      }
+    });
+
+    return NextResponse.json({
+      items,
+      lastEvaluatedKey: response.LastEvaluatedKey ? JSON.stringify(response.LastEvaluatedKey) : undefined,
+      requestId: response.$metadata.requestId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('DynamoDB API: Error retrieving items', {
+      component: 'DynamoDB API',
+      data: {
+        operation: 'GET',
+        tableName: params.tableName,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : 'Unknown error'
+      }
+    });
+
+    return NextResponse.json(
+      {
+        error: 'Failed to retrieve items',
+        message: error instanceof Error ? error.message : 'An unknown error occurred',
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
+    );
+  }
 }
 
-export async function POST(request: NextRequest) {
-  return validateRequest(request, handleCreateItem);
+export async function POST(request: NextRequest, { params }: { params: { tableName: string } }) {
+  logger.info('DynamoDB API: Handling POST request for item creation', {
+    component: 'DynamoDB API',
+    data: { operation: 'POST', tableName: params.tableName }
+  });
+
+  try {
+    const body = await request.json();
+    const marshalledItem = marshall(body.Item);
+
+    const command = new PutItemCommand({
+      TableName: params.tableName,
+      Item: marshalledItem
+    });
+
+    const response = await dynamoDBClient.send(command);
+
+    logger.info('DynamoDB API: Successfully created item', {
+      component: 'DynamoDB API',
+      data: { 
+        operation: 'POST',
+        tableName: params.tableName
+      }
+    });
+
+    return NextResponse.json({
+      requestId: response.$metadata.requestId,
+      timestamp: new Date().toISOString()
+    }, { status: 201 });
+  } catch (error) {
+    logger.error('DynamoDB API: Error creating item', {
+      component: 'DynamoDB API',
+      data: {
+        operation: 'POST',
+        tableName: params.tableName,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : 'Unknown error'
+      }
+    });
+
+    return NextResponse.json(
+      {
+        error: 'Failed to create item',
+        message: error instanceof Error ? error.message : 'An unknown error occurred',
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
+    );
+  }
 }
 
-export async function PUT(request: NextRequest) {
-  return validateRequest(request, handleUpdateItem);
+export async function PUT(request: NextRequest, { params }: { params: { tableName: string } }) {
+  logger.info('DynamoDB API: Handling PUT request for item update', {
+    component: 'DynamoDB API',
+    data: { operation: 'PUT', tableName: params.tableName }
+  });
+
+  try {
+    const body = await request.json();
+    const { Key, UpdateExpression, ExpressionAttributeNames, ExpressionAttributeValues } = body;
+
+    const command = new UpdateItemCommand({
+      TableName: params.tableName,
+      Key: marshall(Key),
+      UpdateExpression,
+      ExpressionAttributeNames,
+      ExpressionAttributeValues: ExpressionAttributeValues ? marshall(ExpressionAttributeValues) : undefined,
+      ReturnValues: 'ALL_NEW'
+    });
+
+    const response = await dynamoDBClient.send(command);
+    const updatedItem = response.Attributes ? unmarshall(response.Attributes) : null;
+
+    logger.info('DynamoDB API: Successfully updated item', {
+      component: 'DynamoDB API',
+      data: { 
+        operation: 'PUT',
+        tableName: params.tableName
+      }
+    });
+
+    return NextResponse.json({
+      item: updatedItem,
+      requestId: response.$metadata.requestId,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    logger.error('DynamoDB API: Error updating item', {
+      component: 'DynamoDB API',
+      data: {
+        operation: 'PUT',
+        tableName: params.tableName,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : 'Unknown error'
+      }
+    });
+
+    return NextResponse.json(
+      {
+        error: 'Failed to update item',
+        message: error instanceof Error ? error.message : 'An unknown error occurred',
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
+    );
+  }
 }
 
-export async function DELETE(request: NextRequest) {
-  return validateRequest(request, handleDeleteItem);
+export async function DELETE(request: NextRequest, { params }: { params: { tableName: string } }) {
+  logger.info('DynamoDB API: Handling DELETE request for item', {
+    component: 'DynamoDB API',
+    data: { operation: 'DELETE', tableName: params.tableName }
+  });
+
+  try {
+    const body = await request.json();
+    const command = new DeleteItemCommand({
+      TableName: params.tableName,
+      Key: marshall(body.Key)
+    });
+
+    const response = await dynamoDBClient.send(command);
+
+    logger.info('DynamoDB API: Successfully deleted item', {
+      component: 'DynamoDB API',
+      data: { 
+        operation: 'DELETE',
+        tableName: params.tableName
+      }
+    });
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    logger.error('DynamoDB API: Error deleting item', {
+      component: 'DynamoDB API',
+      data: {
+        operation: 'DELETE',
+        tableName: params.tableName,
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : 'Unknown error'
+      }
+    });
+
+    return NextResponse.json(
+      {
+        error: 'Failed to delete item',
+        message: error instanceof Error ? error.message : 'An unknown error occurred',
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString()
+      },
+      { status: 500 }
+    );
+  }
 } 

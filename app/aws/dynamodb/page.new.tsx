@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Plus } from '@/app/components/ui/icons';
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogContent } from '@/app/components/ui/dialog';
+import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/app/components/ui/dialog';
 import { DataTable } from '@/app/components/ui/data-table';
 import { logger } from '@/app/utils/logger';
 import { DynamoDBTableItems } from '@/app/aws/dynamodb/components/DynamoDBTableItems';
@@ -316,7 +316,7 @@ function DynamoDBTableView({ tableName }: DynamoDBTableViewProps) {
   );
 }
 
-const Page = () => {
+export default function DynamoDBPage() {
   const [tables, setTables] = useState<TableItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -517,6 +517,4 @@ const Page = () => {
       />
     </div>
   );
-};
-
-export default Page; 
+} 

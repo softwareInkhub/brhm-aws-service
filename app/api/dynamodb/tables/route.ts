@@ -27,7 +27,7 @@ const dynamoDBClient = new DynamoDBClient({
 export async function GET(request: NextRequest) {
   logger.info('DynamoDB API: Handling GET request for tables', {
     component: 'DynamoDB API',
-    operation: 'GET'
+    data: { operation: 'GET' }
   });
 
   try {
@@ -38,8 +38,10 @@ export async function GET(request: NextRequest) {
 
     logger.info('DynamoDB API: Successfully retrieved tables', {
       component: 'DynamoDB API',
-      operation: 'GET',
-      data: { tableCount: response.TableNames?.length || 0 }
+      data: { 
+        operation: 'GET',
+        tableCount: response.TableNames?.length || 0 
+      }
     });
 
     return NextResponse.json({
@@ -50,8 +52,8 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     logger.error('DynamoDB API: Error retrieving tables', {
       component: 'DynamoDB API',
-      operation: 'GET',
       data: {
+        operation: 'GET',
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,
@@ -75,7 +77,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   logger.info('DynamoDB API: Handling POST request for table creation', {
     component: 'DynamoDB API',
-    operation: 'POST'
+    data: { operation: 'POST' }
   });
 
   try {
@@ -84,8 +86,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     logger.info('DynamoDB API: Received table creation request', {
       component: 'DynamoDB API',
-      operation: 'POST',
-      data: { tableName: body.TableName }
+      data: { 
+        operation: 'POST',
+        tableName: body.TableName 
+      }
     });
 
     const createTableParams = {
@@ -127,8 +131,8 @@ export async function POST(request: NextRequest) {
 
     logger.info('DynamoDB API: Successfully created table', {
       component: 'DynamoDB API',
-      operation: 'POST',
       data: { 
+        operation: 'POST',
         tableName: body.TableName,
         tableArn: response.TableDescription?.TableArn
       }
@@ -142,8 +146,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     logger.error('DynamoDB API: Error creating table', {
       component: 'DynamoDB API',
-      operation: 'POST',
       data: {
+        operation: 'POST',
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,
@@ -167,7 +171,7 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   logger.info('DynamoDB API: Handling DELETE request for table', {
     component: 'DynamoDB API',
-    operation: 'DELETE'
+    data: { operation: 'DELETE' }
   });
 
   try {
@@ -180,8 +184,10 @@ export async function DELETE(request: NextRequest) {
 
     logger.info('DynamoDB API: Attempting to delete table', {
       component: 'DynamoDB API',
-      operation: 'DELETE',
-      data: { tableName }
+      data: { 
+        operation: 'DELETE',
+        tableName 
+      }
     });
 
     const command = new DeleteTableCommand({
@@ -192,8 +198,8 @@ export async function DELETE(request: NextRequest) {
 
     logger.info('DynamoDB API: Successfully deleted table', {
       component: 'DynamoDB API',
-      operation: 'DELETE',
       data: { 
+        operation: 'DELETE',
         tableName,
         requestId: response.$metadata.requestId
       }
@@ -203,8 +209,8 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     logger.error('DynamoDB API: Error deleting table', {
       component: 'DynamoDB API',
-      operation: 'DELETE',
       data: {
+        operation: 'DELETE',
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,
