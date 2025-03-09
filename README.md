@@ -9,6 +9,12 @@ A modern web application for managing AWS services through a user-friendly inter
   - Configure partition keys and optional sort keys
   - Choose between provisioned and on-demand capacity
   - View, edit, and delete table items
+  - Smart item creation with:
+    - Auto-detection of required key attributes
+    - Dynamic form validation for required keys
+    - Prevention of key attribute modification
+    - Support for adding/removing custom attributes
+    - Real-time validation of item schema
   - Monitor table metrics and performance
 
 - **SNS (Simple Notification Service)**

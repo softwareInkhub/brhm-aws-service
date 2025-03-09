@@ -21,12 +21,32 @@ interface APIResponse<T> {
   timestamp: string;
 }
 
+// Add CORS headers helper function
+function corsHeaders() {
+  return {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  };
+}
+
+// Add OPTIONS handler for CORS preflight requests
+export async function OPTIONS() {
+  return new NextResponse(null, {
+    status: 204,
+    headers: corsHeaders(),
+  });
+}
+
 function createResponse<T>(data: T, requestId: string, status: number = 200): NextResponse<APIResponse<T>> {
   return NextResponse.json({
     data,
     requestId,
     timestamp: new Date().toISOString()
-  }, { status });
+  }, { 
+    status,
+    headers: corsHeaders()
+  });
 }
 
 function createErrorResponse(error: Error | unknown, status: number = 500): NextResponse<APIResponse<never>> {
@@ -37,7 +57,10 @@ function createErrorResponse(error: Error | unknown, status: number = 500): Next
     message: errorObj.message,
     requestId: crypto.randomUUID(),
     timestamp: new Date().toISOString()
-  }, { status });
+  }, { 
+    status,
+    headers: corsHeaders()
+  });
 }
 
 function validateEnvVars() {
@@ -261,21 +284,16 @@ async function handleDeleteItem(c: any, request: NextRequest) {
   }
 }
 
+// GET - Fetch all items from a table
 export async function GET(request: NextRequest, { params }: { params: { tableName: string } }) {
-  logger.info('DynamoDB API: Handling GET request for items', {
+  logger.info('DynamoDB API: Handling GET request for table items', {
     component: 'DynamoDB API',
     data: { operation: 'GET', tableName: params.tableName }
   });
 
   try {
-    const { searchParams } = new URL(request.url);
-    const limit = parseInt(searchParams.get('limit') || '20');
-    const startKey = searchParams.get('startKey');
-
     const command = new ScanCommand({
       TableName: params.tableName,
-      Limit: limit,
-      ...(startKey && { ExclusiveStartKey: JSON.parse(startKey) }),
     });
 
     const response = await dynamoDBClient.send(command);
@@ -292,9 +310,10 @@ export async function GET(request: NextRequest, { params }: { params: { tableNam
 
     return NextResponse.json({
       items,
-      lastEvaluatedKey: response.LastEvaluatedKey ? JSON.stringify(response.LastEvaluatedKey) : undefined,
       requestId: response.$metadata.requestId,
       timestamp: new Date().toISOString()
+    }, {
+      headers: corsHeaders()
     });
   } catch (error) {
     logger.error('DynamoDB API: Error retrieving items', {
@@ -317,11 +336,12 @@ export async function GET(request: NextRequest, { params }: { params: { tableNam
         requestId: crypto.randomUUID(),
         timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { status: 500, headers: corsHeaders() }
     );
   }
 }
 
+// POST - Create a new item
 export async function POST(request: NextRequest, { params }: { params: { tableName: string } }) {
   logger.info('DynamoDB API: Handling POST request for item creation', {
     component: 'DynamoDB API',
@@ -350,7 +370,10 @@ export async function POST(request: NextRequest, { params }: { params: { tableNa
     return NextResponse.json({
       requestId: response.$metadata.requestId,
       timestamp: new Date().toISOString()
-    }, { status: 201 });
+    }, { 
+      status: 201,
+      headers: corsHeaders()
+    });
   } catch (error) {
     logger.error('DynamoDB API: Error creating item', {
       component: 'DynamoDB API',
@@ -372,45 +395,71 @@ export async function POST(request: NextRequest, { params }: { params: { tableNa
         requestId: crypto.randomUUID(),
         timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { status: 500, headers: corsHeaders() }
     );
   }
 }
 
+// PUT - Update an existing item
 export async function PUT(request: NextRequest, { params }: { params: { tableName: string } }) {
   logger.info('DynamoDB API: Handling PUT request for item update', {
     component: 'DynamoDB API',
-    data: { operation: 'PUT', tableName: params.tableName }
+    data: { operation: 'PUT' }
   });
 
   try {
-    const body = await request.json();
-    const { Key, UpdateExpression, ExpressionAttributeNames, ExpressionAttributeValues } = body;
+    validateEnvVars();
+    const tableName = params.tableName;
+    const { Key, updates } = await request.json();
+
+    // Filter out any updates with undefined values
+    const filteredUpdates = Object.fromEntries(
+      Object.entries(updates).filter(([_, value]) => value !== undefined)
+    );
+
+    // Build update expression
+    const updateExpression = 'SET ' + Object.keys(filteredUpdates)
+      .map((key, index) => `#attr${index} = :val${index}`)
+      .join(', ');
+
+    // Build expression attribute names and values
+    const expressionAttributeNames = Object.keys(filteredUpdates)
+      .reduce((acc, key, index) => ({
+        ...acc,
+        [`#attr${index}`]: key
+      }), {});
+
+    const expressionAttributeValues = Object.entries(filteredUpdates)
+      .reduce((acc, [_, value], index) => ({
+        ...acc,
+        [`:val${index}`]: value
+      }), {});
 
     const command = new UpdateItemCommand({
-      TableName: params.tableName,
-      Key: marshall(Key),
-      UpdateExpression,
-      ExpressionAttributeNames,
-      ExpressionAttributeValues: ExpressionAttributeValues ? marshall(ExpressionAttributeValues) : undefined,
-      ReturnValues: 'ALL_NEW'
+      TableName: tableName,
+      Key: marshall(Key, { removeUndefinedValues: true }),
+      UpdateExpression: updateExpression,
+      ExpressionAttributeNames: expressionAttributeNames,
+      ExpressionAttributeValues: marshall(expressionAttributeValues, { removeUndefinedValues: true })
     });
 
     const response = await dynamoDBClient.send(command);
-    const updatedItem = response.Attributes ? unmarshall(response.Attributes) : null;
 
     logger.info('DynamoDB API: Successfully updated item', {
       component: 'DynamoDB API',
       data: { 
         operation: 'PUT',
-        tableName: params.tableName
+        tableName,
+        requestId: response.$metadata.requestId
       }
     });
 
     return NextResponse.json({
-      item: updatedItem,
+      message: 'Item updated successfully',
       requestId: response.$metadata.requestId,
       timestamp: new Date().toISOString()
+    }, {
+      headers: corsHeaders()
     });
   } catch (error) {
     logger.error('DynamoDB API: Error updating item', {
@@ -433,11 +482,12 @@ export async function PUT(request: NextRequest, { params }: { params: { tableNam
         requestId: crypto.randomUUID(),
         timestamp: new Date().toISOString()
       },
-      { status: 500 }
+      { status: 500, headers: corsHeaders() }
     );
   }
 }
 
+// DELETE - Delete an item
 export async function DELETE(request: NextRequest, { params }: { params: { tableName: string } }) {
   logger.info('DynamoDB API: Handling DELETE request for item', {
     component: 'DynamoDB API',
@@ -461,7 +511,10 @@ export async function DELETE(request: NextRequest, { params }: { params: { table
       }
     });
 
-    return new NextResponse(null, { status: 204 });
+    return NextResponse.json({
+      requestId: response.$metadata.requestId,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     logger.error('DynamoDB API: Error deleting item', {
       component: 'DynamoDB API',

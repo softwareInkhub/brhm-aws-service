@@ -16,6 +16,7 @@ import {
   TabsList,
   TabsTrigger,
 } from '@/app/components/ui/tabs';
+import { toast } from 'react-hot-toast';
 
 interface DynamoDBTableData {
   TableName: string;
@@ -363,6 +364,34 @@ const Page = () => {
     loadTables();
   }, []);
 
+  const handleDeleteTable = async (tableName: string) => {
+    if (!confirm(`Are you sure you want to delete the table "${tableName}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/dynamodb/tables/${tableName}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete table');
+      }
+
+      toast.success('Table deleted successfully');
+      await loadTables();
+      if (selectedTable === tableName) {
+        setSelectedTable(null);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to delete table';
+      toast.error(message);
+      console.error('Error deleting table:', error);
+    }
+  };
+
   const handleCreateTable = async (data: DynamoDBTableData) => {
     logger.info('DynamoDBPage: Creating new table', {
       component: 'DynamoDBPage',
@@ -438,9 +467,9 @@ const Page = () => {
             Edit Schema
           </Button>
           <Button
-            variant="outline"
+            variant="destructive"
             size="sm"
-            className="text-red-600 hover:text-red-700"
+            onClick={() => handleDeleteTable(table.name)}
           >
             Delete
           </Button>
