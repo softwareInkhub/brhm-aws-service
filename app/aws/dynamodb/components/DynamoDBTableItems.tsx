@@ -282,10 +282,9 @@ export function DynamoDBTableItems({ tableName }: DynamoDBTableItemsProps) {
       }), {});
 
       // Remove key attributes from updates
-      const updates = Object.fromEntries(
+      const UpdateData = Object.fromEntries(
         Object.entries(editItem)
           .filter(([key]) => !tableSchema.KeySchema.some(k => k.AttributeName === key))
-          .filter(([_, value]) => value !== undefined && value !== null)
       );
 
       const response = await fetch(`/api/dynamodb/tables/${tableName}/items`, {
@@ -293,7 +292,7 @@ export function DynamoDBTableItems({ tableName }: DynamoDBTableItemsProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           Key: keyAttributes,
-          updates
+          UpdateData
         }),
       });
 
