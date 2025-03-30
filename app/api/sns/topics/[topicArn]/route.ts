@@ -95,5 +95,47 @@ async function handleDELETE(request: NextRequest, { params }: { params: { topicA
   }
 }
 
-export const DELETE = (request: NextRequest, context: { params: { topicArn: string } }) => 
-  validateOpenAPI(request, () => handleDELETE(request, context)); 
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ topicArn: string }> }
+) {
+  const { topicArn } = await context.params;
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[SNS API][${requestId}] Handling DELETE request for topic: ${topicArn}`);
+
+  try {
+    const client = await getSNSClient();
+    
+    await client.deleteTopic({
+      TopicArn: decodeURIComponent(topicArn)
+    });
+
+    console.log(`[SNS API][${requestId}] Successfully deleted topic: ${topicArn}`);
+
+    return new NextResponse(null, { status: 204 });
+  } catch (error) {
+    console.error(`[SNS API][${requestId}] Error:`, error);
+
+    if (error instanceof Error && error.name === 'ResourceNotFoundException') {
+      return NextResponse.json(
+        {
+          error: 'Topic not found',
+          message: 'The specified topic does not exist',
+          requestId,
+          timestamp: new Date().toISOString(),
+        },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        error: 'Failed to delete SNS topic',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        requestId,
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 }
+    );
+  }
+} 

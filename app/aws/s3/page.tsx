@@ -1,13 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useToast } from '@/components/ui/use-toast';
+import { Button } from '@/app/components/ui2/button';
+import { Input } from '@/app/components/ui2/input';
+import { Label } from '@/app/components/ui2/label';
+import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui2/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui2/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/app/components/ui2/table';
+import { useToast } from '@/app/components/ui2/use-toast';
 import { Loader2, Upload, Trash2, FolderPlus, FileText } from 'lucide-react';
 
 interface Bucket {

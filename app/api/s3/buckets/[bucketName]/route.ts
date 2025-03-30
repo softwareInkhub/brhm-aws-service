@@ -28,7 +28,7 @@ export async function OPTIONS() {
   });
 }
 
-function createResponse<T>(data: T, requestId: string, status: number = 200): NextResponse<T> {
+function createResponse<T>(data: T, requestId: string, status: number = 200): NextResponse<{ data: T; requestId: string; timestamp: string }> {
   return NextResponse.json({
     data,
     requestId,
@@ -78,11 +78,11 @@ const s3Client = new S3Client({
 // GET - List objects in bucket
 export async function GET(
   request: NextRequest,
-  context: { params: { bucketName: string } }
+  context: { params: Promise<{ bucketName: string }> }
 ) {
   try {
     validateEnvVars();
-    const { bucketName } = context.params;
+    const { bucketName } = await context.params;
     const { searchParams } = new URL(request.url);
     const prefix = searchParams.get('prefix') || '';
     const delimiter = searchParams.get('delimiter') || '/';
@@ -132,11 +132,11 @@ export async function GET(
 // POST - Upload object to bucket
 export async function POST(
   request: NextRequest,
-  context: { params: { bucketName: string } }
+  context: { params: Promise<{ bucketName: string }> }
 ) {
   try {
     validateEnvVars();
-    const { bucketName } = context.params;
+    const { bucketName } = await context.params;
     const formData = await request.formData();
     const file = formData.get('file') as File;
     const key = formData.get('key') as string || file.name;
@@ -197,11 +197,11 @@ export async function POST(
 // DELETE - Delete object from bucket
 export async function DELETE(
   request: NextRequest,
-  context: { params: { bucketName: string } }
+  context: { params: Promise<{ bucketName: string }> }
 ) {
   try {
     validateEnvVars();
-    const { bucketName } = context.params;
+    const { bucketName } = await context.params;
     const { searchParams } = new URL(request.url);
     const key = searchParams.get('key');
 

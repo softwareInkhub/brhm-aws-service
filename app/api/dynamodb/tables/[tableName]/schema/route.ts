@@ -11,15 +11,19 @@ const dynamoDBClient = new DynamoDBClient({
 });
 
 // GET - Describe table schema
-export async function GET(request: NextRequest, { params }: { params: { tableName: string } }) {
+export async function GET(
+  request: NextRequest,
+  context: { params: Promise<{ tableName: string }> }
+) {
+  const { tableName } = await context.params;
   logger.info('DynamoDB API: Handling GET request for table schema', {
     component: 'DynamoDB API',
-    data: { operation: 'GET', tableName: params.tableName }
+    data: { operation: 'GET', tableName: tableName }
   });
 
   try {
     const command = new DescribeTableCommand({
-      TableName: params.tableName
+      TableName: tableName
     });
 
     const response = await dynamoDBClient.send(command);
@@ -28,7 +32,7 @@ export async function GET(request: NextRequest, { params }: { params: { tableNam
       component: 'DynamoDB API',
       data: { 
         operation: 'GET',
-        tableName: params.tableName
+        tableName: tableName
       }
     });
 
@@ -42,7 +46,7 @@ export async function GET(request: NextRequest, { params }: { params: { tableNam
       component: 'DynamoDB API',
       data: {
         operation: 'GET',
-        tableName: params.tableName,
+        tableName: tableName,
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,
@@ -64,16 +68,20 @@ export async function GET(request: NextRequest, { params }: { params: { tableNam
 }
 
 // PUT - Update table schema
-export async function PUT(request: NextRequest, { params }: { params: { tableName: string } }) {
+export async function PUT(
+  request: NextRequest,
+  context: { params: Promise<{ tableName: string }> }
+) {
+  const { tableName } = await context.params;
   logger.info('DynamoDB API: Handling PUT request for table schema update', {
     component: 'DynamoDB API',
-    data: { operation: 'PUT', tableName: params.tableName }
+    data: { operation: 'PUT', tableName: tableName }
   });
 
   try {
     const body = await request.json();
     const command = new UpdateTableCommand({
-      TableName: params.tableName,
+      TableName: tableName,
       AttributeDefinitions: body.AttributeDefinitions,
       ProvisionedThroughput: body.ProvisionedThroughput,
       GlobalSecondaryIndexUpdates: body.GlobalSecondaryIndexUpdates,
@@ -88,7 +96,7 @@ export async function PUT(request: NextRequest, { params }: { params: { tableNam
       component: 'DynamoDB API',
       data: { 
         operation: 'PUT',
-        tableName: params.tableName
+        tableName: tableName
       }
     });
 
@@ -102,7 +110,7 @@ export async function PUT(request: NextRequest, { params }: { params: { tableNam
       component: 'DynamoDB API',
       data: {
         operation: 'PUT',
-        tableName: params.tableName,
+        tableName: tableName,
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,

@@ -3,7 +3,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
-import { Toaster } from "@/components/ui/toaster"
+import { Toaster } from "@/app/components/ui2/toaster"
 
 const geist = Geist({
   subsets: ["latin"],

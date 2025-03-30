@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/ca
 import { Button } from '@/app/components/ui/button';
 import { Plus } from '@/app/components/ui/icons';
 import { Alert, AlertDescription } from '@/app/components/ui/alert';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/app/components/ui/dialog';
+import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogContent } from '@/app/components/ui/dialog';
 import { DataTable } from '@/app/components/ui/data-table';
 import { listTopics, createTopic, deleteTopic, type SNSTopic, type CreateTopicParams } from '@/app/services/sns';
 import { logger } from '@/app/utils/logger';
@@ -41,64 +41,66 @@ function CreateTopicDialog({ isOpen, onClose, onSubmit }: CreateTopicDialogProps
   };
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} title="Create SNS Topic">
-      <form onSubmit={handleSubmit}>
-        <DialogHeader>
-          <DialogTitle>Create New Topic</DialogTitle>
-          <DialogDescription>
-            Create a new SNS topic to start sending notifications.
-          </DialogDescription>
-        </DialogHeader>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent>
+        <form onSubmit={handleSubmit}>
+          <DialogHeader>
+            <DialogTitle>Create New Topic</DialogTitle>
+            <DialogDescription>
+              Create a new SNS topic to start sending notifications.
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="space-y-4 p-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
+          <div className="space-y-4 p-4">
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
 
-          <div>
-            <label htmlFor="name" className="block text-sm font-medium text-gray-700">
-              Topic Name
-            </label>
-            <input
-              type="text"
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-              required
-            />
+            <div>
+              <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                Topic Name
+              </label>
+              <input
+                type="text"
+                id="name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+                required
+              />
+            </div>
+
+            <div>
+              <label htmlFor="displayName" className="block text-sm font-medium text-gray-700">
+                Display Name (Optional)
+              </label>
+              <input
+                type="text"
+                id="displayName"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
+              />
+            </div>
           </div>
 
-          <div>
-            <label htmlFor="displayName" className="block text-sm font-medium text-gray-700">
-              Display Name (Optional)
-            </label>
-            <input
-              type="text"
-              id="displayName"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-            />
-          </div>
-        </div>
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={onClose}
-            disabled={isSubmitting}
-          >
-            Cancel
-          </Button>
-          <Button type="submit" disabled={isSubmitting}>
-            {isSubmitting ? 'Creating...' : 'Create Topic'}
-          </Button>
-        </DialogFooter>
-      </form>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              disabled={isSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isSubmitting}>
+              {isSubmitting ? 'Creating...' : 'Create Topic'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
     </Dialog>
   );
 }
@@ -130,7 +132,7 @@ function DeleteTopicDialog({ isOpen, onClose, topic, onConfirm }: DeleteTopicDia
   };
 
   return (
-    <Dialog isOpen={isOpen} onClose={onClose} title="Delete Topic">
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogHeader>
         <DialogTitle>Delete Topic</DialogTitle>
         <DialogDescription>

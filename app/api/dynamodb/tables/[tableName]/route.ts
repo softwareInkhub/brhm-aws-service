@@ -10,15 +10,19 @@ const dynamoDBClient = new DynamoDBClient({
   },
 });
 
-export async function DELETE(request: NextRequest, { params }: { params: { tableName: string } }) {
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ tableName: string }> }
+) {
+  const { tableName } = await context.params;
   logger.info('DynamoDB API: Handling DELETE request for table', {
     component: 'DynamoDB API',
-    data: { operation: 'DELETE', tableName: params.tableName }
+    data: { operation: 'DELETE', tableName: tableName }
   });
 
   try {
     const command = new DeleteTableCommand({
-      TableName: params.tableName
+      TableName: tableName
     });
 
     const response = await dynamoDBClient.send(command);
@@ -27,7 +31,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { table
       component: 'DynamoDB API',
       data: { 
         operation: 'DELETE',
-        tableName: params.tableName,
+        tableName: tableName,
         requestId: response.$metadata.requestId
       }
     });
@@ -42,7 +46,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { table
       component: 'DynamoDB API',
       data: {
         operation: 'DELETE',
-        tableName: params.tableName,
+        tableName: tableName,
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,
