@@ -1,28 +1,29 @@
 'use client';
 
-import React from 'react';
+import { Button } from "@/app/components/ui/button";
+import { Bell, Settings } from "lucide-react";
 
 export const Navbar = () => {
   return (
-    <nav className="fixed top-0 left-0 right-0 z-30 bg-white border-b border-gray-200">
-      <div className="px-4 py-3 lg:px-6">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <span className="text-xl font-semibold text-gray-800">
-              AWS Dashboard
-            </span>
+    <nav className="fixed top-0 left-0 right-0 z-30 bg-white border-b border-gray-200 w-full">
+      <div className="px-6 md:px-8 sm:px-8">
+        <div className="flex items-center justify-between h-16">
+          <div className="flex items-center ">
           </div>
-          <div className="flex items-center space-x-4">
-            <button 
-              type="button" 
-              className="flex items-center text-sm bg-gray-800 rounded-full focus:ring-4 focus:ring-gray-300 p-1.5"
-            >
-              <img 
-                className="w-8 h-8 rounded-full" 
-                src="https://ui-avatars.com/api/?name=Admin+User&background=0D9488&color=fff" 
-                alt="user photo" 
-              />
-            </button>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="icon" className="hidden md:flex">
+              <Bell className="h-5 w-5 text-gray-500" />
+            </Button>
+            <Button variant="ghost" size="icon" className="hidden md:flex">
+              <Settings className="h-5 w-5 text-gray-500" />
+            </Button>
+            <div className="flex items-center">
+              <Button variant="ghost" size="sm" className="flex">
+                <span className="h-8 w-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-medium text-sm">
+                  AU
+                </span>
+              </Button>
+            </div>
           </div>
         </div>
       </div>

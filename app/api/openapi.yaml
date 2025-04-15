@@ -465,6 +465,14 @@ components:
               items:
                 type: string
 
+    IAMPolicy:
+      type: object
+      properties:
+        PolicyName:
+          type: string
+        PolicyDocument:
+          type: object
+
 paths:
   /s3:
     get:
@@ -717,6 +725,117 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/IAMRole'
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /iam/policies:
+    get:
+      summary: List IAM policies
+      operationId: listPolicies
+      responses:
+        '200':
+          description: Successfully retrieved policies
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/IAMPolicy'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /iam/roles/{roleName}/policies:
+    post:
+      summary: Attach policy to role
+      operationId: attachRolePolicy
+      parameters:
+        - name: roleName
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                policyArn:
+                  type: string
+              required:
+                - policyArn
+      responses:
+        '200':
+          description: Policy attached successfully
+        '400':
+          description: Invalid request parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          description: AWS Authentication Failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    
+    delete:
+      summary: Detach policy from role
+      operationId: detachRolePolicy
+      parameters:
+        - name: roleName
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                policyArn:
+                  type: string
+              required:
+                - policyArn
+      responses:
+        '200':
+          description: Policy detached successfully
         '400':
           description: Invalid request parameters
           content:

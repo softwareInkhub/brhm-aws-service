@@ -1,65 +1,90 @@
-import { APIGateway } from '@aws-sdk/client-api-gateway';
-import { NextResponse } from 'next/server';
-import { validateOpenAPI } from '@/app/middleware/openapi-validator';
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { APIGatewayClient, CreateRestApiCommand, GetRestApisCommand } from '@aws-sdk/client-api-gateway';
+import { getAWSCredentials } from '../../utils/aws-credentials';
+import { logger } from '../../utils/logger';
 
-const apiGatewayClient = new APIGateway({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
-
-async function handleGET() {
-  console.log('[API Gateway] Listing APIs');
-  console.log('[API Gateway] Using region:', process.env.AWS_REGION);
-
+export async function GET() {
   try {
-    const { items } = await apiGatewayClient.getRestApis({});
-    console.log('[API Gateway] Successfully retrieved APIs:', JSON.stringify(items, null, 2));
-    return NextResponse.json(items);
+    const credentials = await getAWSCredentials();
+    const client = new APIGatewayClient({ credentials });
+
+    const command = new GetRestApisCommand({});
+    const response = await client.send(command);
+
+    return NextResponse.json(response.items?.map(api => ({
+      id: api.id,
+      name: api.name,
+      description: api.description,
+      createdDate: api.createdDate?.toISOString(),
+      protocol: api.endpointConfiguration?.types?.includes('PRIVATE') ? 'HTTP' : 'REST',
+      endpointConfiguration: {
+        types: api.endpointConfiguration?.types || []
+      }
+    })) || []);
   } catch (error) {
-    console.error('[API Gateway] Error listing APIs:', error);
+    logger.error('Error listing API Gateway APIs', {
+      component: 'APIGatewayRoute',
+      data: {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : 'Unknown error'
+      }
+    });
+
     return NextResponse.json(
-      { error: 'Failed to list API Gateway APIs', details: error },
+      { error: 'Failed to list API Gateway APIs' },
       { status: 500 }
     );
   }
 }
 
-async function handlePOST(request: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    console.log('[API Gateway] Creating API with params:', JSON.stringify(body, null, 2));
-
     const { name, description, endpointType, protocol } = body;
 
-    const createApiParams = {
+    const credentials = await getAWSCredentials();
+    const client = new APIGatewayClient({ credentials });
+
+    const command = new CreateRestApiCommand({
       name,
       description,
       endpointConfiguration: {
-        types: [endpointType],
+        types: [endpointType]
       },
+      apiKeySource: 'HEADER',
+      disableExecuteApiEndpoint: false
+    });
+
+    const response = await client.send(command);
+
+    return NextResponse.json({
+      id: response.id,
+      name: response.name,
+      description: response.description,
+      createdDate: response.createdDate?.toISOString(),
       protocol,
-    };
-
-    console.log('[API Gateway] Sending createRestApi request:', JSON.stringify(createApiParams, null, 2));
-    const result = await apiGatewayClient.createRestApi(createApiParams);
-    console.log('[API Gateway] API created successfully:', JSON.stringify(result, null, 2));
-
-    return NextResponse.json(
-      { id: result.id, message: 'API Gateway created successfully' },
-      { status: 201 }
-    );
+      endpointConfiguration: {
+        types: response.endpointConfiguration?.types || []
+      }
+    });
   } catch (error) {
-    console.error('[API Gateway] Error creating API:', error);
+    logger.error('Error creating API Gateway API', {
+      component: 'APIGatewayRoute',
+      data: {
+        error: error instanceof Error ? {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        } : 'Unknown error'
+      }
+    });
+
     return NextResponse.json(
-      { error: 'Failed to create API Gateway', details: error },
+      { error: 'Failed to create API Gateway API' },
       { status: 500 }
     );
   }
-}
-
-export const GET = (request: NextRequest) => validateOpenAPI(request, handleGET);
-export const POST = (request: NextRequest) => validateOpenAPI(request, handlePOST); 
+} 

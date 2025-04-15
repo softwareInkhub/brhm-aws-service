@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { Navbar } from "./components/Navbar";
 import { Sidebar } from "./components/Sidebar";
-import { Toaster } from "@/app/components/ui2/toaster"
+import { Toaster } from "@/app/components/ui/toaster"
 
-const geist = Geist({
+const inter = Inter({
   subsets: ["latin"],
 });
 
@@ -21,11 +21,11 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${geist.className} bg-gray-50`}>
+      <body className={`${inter.className} bg-gray-50`}>
         <div className="min-h-screen">
           <Navbar />
           <Sidebar />
-          <main className="p-4 sm:ml-64 pt-20">
+          <main className="p-4 md:ml-16 lg:ml-64 pt-20 transition-all duration-300">
             {children}
           </main>
         </div>

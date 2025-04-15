@@ -1,551 +1,562 @@
-'use client';
+"use client";
 
-import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui/card';
-import { Button } from '@/app/components/ui/button';
-import { Plus } from '@/app/components/ui/icons';
-import { Alert, AlertDescription } from '@/app/components/ui/alert';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogContent } from '@/app/components/ui/dialog';
-import { DataTable } from '@/app/components/ui/data-table';
-import { logger } from '@/app/utils/logger';
-import { DynamoDBTableItems } from '@/app/aws/dynamodb/components/DynamoDBTableItems';
-import { DynamoDBTableSchema } from '@/app/aws/dynamodb/components/DynamoDBTableSchema';
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from '@/app/components/ui/tabs';
-import { toast } from 'react-hot-toast';
+import { useEffect, useState } from "react";
+import { Button } from "@/app/components/ui/button";
+import { Input } from "@/app/components/ui/input";
+import { Plus, Search, Database, Loader2, ChevronRight, Copy, Download, Trash2 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/app/components/ui/dialog";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
-interface DynamoDBTableData {
+// Add new interface for table details
+interface TableDetails {
   TableName: string;
-  PartitionKey: {
-    name: string;
-    type: 'String' | 'Number' | 'Binary';
+  TableStatus: string;
+  KeySchema: Array<{
+    AttributeName: string;
+    KeyType: string;
+  }>;
+  GlobalSecondaryIndexes?: Array<any>;
+  LocalSecondaryIndexes?: Array<any>;
+  ReplicaDescriptions?: Array<any>;
+  DeletionProtectionEnabled?: boolean;
+  BillingModeSummary?: {
+    BillingMode: string;
   };
-  SortKey?: {
-    name: string;
-    type: 'String' | 'Number' | 'Binary';
-  };
-  BillingMode: 'PROVISIONED' | 'PAY_PER_REQUEST';
-  ProvisionedThroughput?: {
-    ReadCapacityUnits: number;
-    WriteCapacityUnits: number;
-  };
-  Tags?: Array<{ Key: string; Value: string }>;
 }
 
-interface CreateTableDialogProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onSubmit: (data: DynamoDBTableData) => Promise<void>;
-}
-
-function CreateTableDialog({ isOpen, onClose, onSubmit }: CreateTableDialogProps) {
-  const [formData, setFormData] = useState<DynamoDBTableData>({
-    TableName: '',
-    PartitionKey: { name: '', type: 'String' },
-    BillingMode: 'PAY_PER_REQUEST',
-  });
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hasSortKey, setHasSortKey] = useState(false);
-  const [isProvisioned, setIsProvisioned] = useState(false);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    logger.info('CreateTableDialog: Starting table creation', {
-      component: 'CreateTableDialog',
-      data: { formData }
-    });
-    
-    setIsSubmitting(true);
-    setError(null);
-
-    try {
-      await onSubmit(formData);
-      logger.info('CreateTableDialog: Table creation submitted successfully', {
-        component: 'CreateTableDialog',
-        data: { tableName: formData.TableName }
-      });
-      onClose();
-    } catch (error) {
-      logger.error('CreateTableDialog: Error creating table', {
-        component: 'CreateTableDialog',
-        data: {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : 'Unknown error',
-          formData
-        }
-      });
-      setError(error instanceof Error ? error.message : 'Failed to create table');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const updateFormData = (updates: Partial<DynamoDBTableData>) => {
-    setFormData(prev => ({ ...prev, ...updates }));
-  };
-
-  return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent>
-        <form onSubmit={handleSubmit}>
-          <DialogHeader>
-            <DialogTitle>Create New Table</DialogTitle>
-            <DialogDescription>
-              Create a new DynamoDB table with the specified schema and configuration.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 p-4">
-            {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
-
-            <div>
-              <label htmlFor="tableName" className="block text-sm font-medium text-gray-700">
-                Table Name
-              </label>
-              <input
-                type="text"
-                id="tableName"
-                value={formData.TableName}
-                onChange={(e) => updateFormData({ TableName: e.target.value })}
-                className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                required
-                pattern="^[a-zA-Z0-9_.-]+$"
-                minLength={3}
-                maxLength={255}
-              />
-            </div>
-
-            <div>
-              <h4 className="text-sm font-medium text-gray-700 mb-2">Partition Key</h4>
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="text"
-                  placeholder="Key Name"
-                  value={formData.PartitionKey.name}
-                  onChange={(e) => updateFormData({
-                    PartitionKey: { ...formData.PartitionKey, name: e.target.value }
-                  })}
-                  className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  required
-                />
-                <select
-                  value={formData.PartitionKey.type}
-                  onChange={(e) => updateFormData({
-                    PartitionKey: { ...formData.PartitionKey, type: e.target.value as 'String' | 'Number' | 'Binary' }
-                  })}
-                  className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                  required
-                >
-                  <option value="String">String</option>
-                  <option value="Number">Number</option>
-                  <option value="Binary">Binary</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <div className="flex items-center mb-2">
-                <input
-                  type="checkbox"
-                  id="hasSortKey"
-                  checked={hasSortKey}
-                  onChange={(e) => {
-                    setHasSortKey(e.target.checked);
-                    if (!e.target.checked) {
-                      updateFormData({ SortKey: undefined });
-                    } else {
-                      updateFormData({
-                        SortKey: { name: '', type: 'String' }
-                      });
-                    }
-                  }}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="hasSortKey" className="ml-2 text-sm font-medium text-gray-700">
-                  Add Sort Key
-                </label>
-              </div>
-
-              {hasSortKey && (
-                <div className="grid grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    placeholder="Sort Key Name"
-                    value={formData.SortKey?.name || ''}
-                    onChange={(e) => updateFormData({
-                      SortKey: { ...formData.SortKey!, name: e.target.value }
-                    })}
-                    className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    required
-                  />
-                  <select
-                    value={formData.SortKey?.type || 'String'}
-                    onChange={(e) => updateFormData({
-                      SortKey: { ...formData.SortKey!, type: e.target.value as 'String' | 'Number' | 'Binary' }
-                    })}
-                    className="rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                    required
-                  >
-                    <option value="String">String</option>
-                    <option value="Number">Number</option>
-                    <option value="Binary">Binary</option>
-                  </select>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <div className="flex items-center mb-2">
-                <input
-                  type="checkbox"
-                  id="isProvisioned"
-                  checked={isProvisioned}
-                  onChange={(e) => {
-                    setIsProvisioned(e.target.checked);
-                    updateFormData({
-                      BillingMode: e.target.checked ? 'PROVISIONED' : 'PAY_PER_REQUEST',
-                      ProvisionedThroughput: e.target.checked
-                        ? { ReadCapacityUnits: 5, WriteCapacityUnits: 5 }
-                        : undefined
-                    });
-                  }}
-                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                />
-                <label htmlFor="isProvisioned" className="ml-2 text-sm font-medium text-gray-700">
-                  Use Provisioned Capacity
-                </label>
-              </div>
-
-              {isProvisioned && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="readCapacity" className="block text-sm font-medium text-gray-700">
-                      Read Capacity Units
-                    </label>
-                    <input
-                      type="number"
-                      id="readCapacity"
-                      min="1"
-                      value={formData.ProvisionedThroughput?.ReadCapacityUnits || 5}
-                      onChange={(e) => updateFormData({
-                        ProvisionedThroughput: {
-                          ...formData.ProvisionedThroughput!,
-                          ReadCapacityUnits: parseInt(e.target.value)
-                        }
-                      })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="writeCapacity" className="block text-sm font-medium text-gray-700">
-                      Write Capacity Units
-                    </label>
-                    <input
-                      type="number"
-                      id="writeCapacity"
-                      min="1"
-                      value={formData.ProvisionedThroughput?.WriteCapacityUnits || 5}
-                      onChange={(e) => updateFormData({
-                        ProvisionedThroughput: {
-                          ...formData.ProvisionedThroughput!,
-                          WriteCapacityUnits: parseInt(e.target.value)
-                        }
-                      })}
-                      className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm"
-                      required
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onClose}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? 'Creating...' : 'Create Table'}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-interface TableItem {
-  name: string;
-}
-
-interface DynamoDBTableViewProps {
-  tableName: string;
-}
-
-function DynamoDBTableView({ tableName }: DynamoDBTableViewProps) {
-  return (
-    <Tabs defaultValue="items" className="space-y-4">
-      <TabsList>
-        <TabsTrigger value="items">Items</TabsTrigger>
-        <TabsTrigger value="schema">Schema</TabsTrigger>
-      </TabsList>
-      <TabsContent value="items">
-        <DynamoDBTableItems tableName={tableName} />
-      </TabsContent>
-      <TabsContent value="schema">
-        <DynamoDBTableSchema tableName={tableName} />
-      </TabsContent>
-    </Tabs>
-  );
-}
-
-const Page = () => {
-  const [tables, setTables] = useState<TableItem[]>([]);
+export default function DynamoDBPage() {
+  const [tables, setTables] = useState<TableDetails[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
-  const [selectedTable, setSelectedTable] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [newTableName, setNewTableName] = useState("");
+  const [creatingTable, setCreatingTable] = useState(false);
+  const [selectedTables, setSelectedTables] = useState<Set<string>>(new Set());
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [expandedTable, setExpandedTable] = useState<string | null>(null);
+  const [tableDetails, setTableDetails] = useState<Record<string, TableDetails>>({});
 
-  async function loadTables() {
-    logger.info('DynamoDBPage: Starting to load tables', {
-      component: 'DynamoDBPage'
-    });
-    
-    setLoading(true);
-    setError(null);
+  const router = useRouter();
 
-    try {
-      const response = await fetch('/api/dynamodb/tables');
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const data = await response.json();
-      logger.info('DynamoDBPage: Successfully loaded tables', {
-        component: 'DynamoDBPage',
-        data: { tableCount: data.tables.length }
-      });
-      setTables(data.tables.map((table: string) => ({ name: table })));
-    } catch (error) {
-      logger.error('DynamoDBPage: Error loading tables', {
-        component: 'DynamoDBPage',
-        data: {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : 'Unknown error'
-        }
-      });
-      setError(error instanceof Error ? error.message : 'An unknown error occurred');
-    } finally {
-      setLoading(false);
-    }
-  }
-
+  // Fetch tables on component mount
   useEffect(() => {
-    loadTables();
+    console.log("Fetching tables...");
+    fetchTables();
   }, []);
 
-  const handleDeleteTable = async (tableName: string) => {
-    if (!confirm(`Are you sure you want to delete the table "${tableName}"? This action cannot be undone.`)) {
+  const fetchTables = async () => {
+    try {
+      setLoading(true);
+      if (isInitialLoad) {
+        setLoadingProgress(0);
+      }
+
+      const response = await fetch("/api/dynamodb/tables");
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to fetch tables");
+      }
+
+      console.log("Tables response:", data);
+      
+      if (!Array.isArray(data.tables)) {
+        console.error("Invalid tables data:", data);
+        toast.error("Received invalid data format from server");
+        return;
+      }
+
+      setTables(data.tables);
+      // Fetch details for all tables immediately
+      data.tables.forEach((table: TableDetails) => fetchTableDetails(table.TableName));
+      setIsInitialLoad(false);
+    } catch (error) {
+      console.error("Error fetching tables:", error);
+      toast.error("Failed to fetch DynamoDB tables. Check console for details.");
+    } finally {
+      setLoading(false);
+      setLoadingProgress(100);
+    }
+  };
+
+  // Safe filtering of tables
+  const filteredTables = tables?.filter((table) => {
+    if (!table?.TableName || !searchTerm) return true;
+    return table.TableName.toLowerCase().includes(searchTerm.toLowerCase());
+  }) || [];
+
+  // Debug logs for data flow
+  useEffect(() => {
+    console.log("Current tables state:", tables);
+    console.log("Filtered tables:", filteredTables);
+  }, [tables, filteredTables]);
+
+  const handleCreateTable = async () => {
+    if (!newTableName.trim()) {
+      toast.error("Please enter a table name");
       return;
     }
 
     try {
-      const response = await fetch(`/api/dynamodb/tables/${tableName}`, {
-        method: 'DELETE',
+      setCreatingTable(true);
+      const response = await fetch("/api/dynamodb/tables", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ tableName: newTableName }),
       });
 
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.message || 'Failed to delete table');
+        throw new Error(data.error || "Failed to create table");
       }
 
-      toast.success('Table deleted successfully');
-      await loadTables();
-      if (selectedTable === tableName) {
-        setSelectedTable(null);
-      }
+      toast.success("Table created successfully");
+      setShowCreateDialog(false);
+      setNewTableName("");
+      fetchTables();
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to delete table';
-      toast.error(message);
-      console.error('Error deleting table:', error);
+      console.error("Error creating table:", error);
+      toast.error("Failed to create table. Check console for details.");
+    } finally {
+      setCreatingTable(false);
     }
   };
 
-  const handleCreateTable = async (data: DynamoDBTableData) => {
-    logger.info('DynamoDBPage: Creating new table', {
-      component: 'DynamoDBPage',
-      data: { tableData: data }
-    });
+  const handleDeleteTable = async (tableName: string) => {
+    if (!confirm(`Are you sure you want to delete table "${tableName}"?`)) {
+      return;
+    }
 
     try {
-      const response = await fetch('/api/dynamodb/tables', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
+      const response = await fetch(`/api/dynamodb/tables?tableName=${encodeURIComponent(tableName)}`, {
+        method: "DELETE",
       });
 
-      const responseData = await response.json();
+      const data = await response.json();
       
       if (!response.ok) {
-        logger.error('DynamoDBPage: Error creating table', {
-          component: 'DynamoDBPage',
-          data: {
-            status: response.status,
-            statusText: response.statusText,
-            responseData,
-            requestData: data
-          }
-        });
-        throw new Error(responseData.message || 'Failed to create table');
+        throw new Error(data.error || "Failed to delete table");
       }
 
-      logger.info('DynamoDBPage: Table created successfully', {
-        component: 'DynamoDBPage',
-        data: { 
-          tableName: data.TableName,
-          response: responseData
-        }
-      });
-
-      await loadTables();
-      setIsCreateDialogOpen(false);
+      toast.success("Table deleted successfully");
+      fetchTables();
     } catch (error) {
-      logger.error('DynamoDBPage: Exception while creating table', {
-        component: 'DynamoDBPage',
-        data: {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : 'Unknown error',
-          requestData: data
-        }
-      });
-      throw error;
+      console.error("Error deleting table:", error);
+      toast.error("Failed to delete table. Check console for details.");
     }
   };
 
-  const columns = [
-    {
-      key: 'name',
-      header: 'Table Name',
-      sortable: true,
-    },
-    {
-      key: 'actions',
-      header: 'Actions',
-      className: 'text-right',
-      render: (table: TableItem) => (
-        <div className="flex justify-end space-x-2">
-          <Button variant="outline" size="sm" onClick={() => setSelectedTable(table.name)}>
-            View Items
-          </Button>
-          <Button variant="outline" size="sm">
-            Edit Schema
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => handleDeleteTable(table.name)}
-          >
-            Delete
-          </Button>
-        </div>
-      ),
-    },
-  ];
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedTables(new Set(filteredTables.map(t => t.TableName)));
+    } else {
+      setSelectedTables(new Set());
+    }
+  };
 
-  if (error) {
-    return (
-      <div className="p-4">
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
+  const handleSelectTable = (tableName: string, checked: boolean) => {
+    const newSelected = new Set(selectedTables);
+    if (checked) {
+      newSelected.add(tableName);
+    } else {
+      newSelected.delete(tableName);
+    }
+    setSelectedTables(newSelected);
+  };
+
+  const handleCopySelected = async () => {
+    const selectedTablesList = Array.from(selectedTables);
+    await navigator.clipboard.writeText(selectedTablesList.join('\n'));
+    toast.success(`Copied ${selectedTables.size} table names to clipboard`);
+  };
+
+  const handleDownloadSelected = () => {
+    const selectedTablesList = Array.from(selectedTables);
+    const content = selectedTablesList.join('\n');
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'selected-tables.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(`Downloaded ${selectedTables.size} table names`);
+  };
+
+  const handleDeleteSelected = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedTables.size} tables?`)) {
+      return;
+    }
+
+    const selectedTablesList = Array.from(selectedTables);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const tableName of selectedTablesList) {
+      try {
+        const response = await fetch(`/api/dynamodb/tables?tableName=${encodeURIComponent(tableName)}`, {
+          method: "DELETE",
+        });
+
+        if (response.ok) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch (error) {
+        console.error(`Error deleting table ${tableName}:`, error);
+        failCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      toast.success(`Successfully deleted ${successCount} tables`);
+    }
+    if (failCount > 0) {
+      toast.error(`Failed to delete ${failCount} tables`);
+    }
+
+    setSelectedTables(new Set());
+    fetchTables();
+  };
+
+  const fetchTableDetails = async (tableName: string) => {
+    if (tableDetails[tableName]) return; // Skip if already loaded
+
+    try {
+      const response = await fetch("/api/dynamodb/tables", {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ tableName }),
+      });
+      
+      if (!response.ok) {
+        throw new Error("Failed to fetch table details");
+      }
+
+      const details = await response.json();
+      setTableDetails(prev => ({
+        ...prev,
+        [tableName]: details
+      }));
+    } catch (error) {
+      console.error("Error fetching table details:", error);
+      toast.error(`Failed to load details for ${tableName}`);
+    }
+  };
+
+  const handleRowClick = async (tableName: string) => {
+    router.push(`/aws/dynamodb/${encodeURIComponent(tableName)}`);
+  };
+
+  // Loading skeleton component
+  const TableSkeleton = () => (
+    <div className="animate-pulse">
+      <div className="flex items-center px-6 py-4 border-b border-gray-200">
+        <div className="w-6 h-4 bg-gray-200 rounded"></div>
+        <div className="ml-4 w-48 h-4 bg-gray-200 rounded"></div>
+        <div className="ml-auto flex space-x-16">
+          <div className="w-20 h-4 bg-gray-200 rounded"></div>
+          <div className="w-20 h-4 bg-gray-200 rounded"></div>
+          <div className="w-20 h-4 bg-gray-200 rounded"></div>
+          <div className="w-20 h-4 bg-gray-200 rounded"></div>
+          <div className="w-20 h-4 bg-gray-200 rounded"></div>
+        </div>
+      </div>
       </div>
     );
-  }
 
   return (
-    <div className="container mx-auto py-6">
-      <h1 className="text-3xl font-bold mb-6">DynamoDB Tables</h1>
-      {selectedTable ? (
-        <DynamoDBTableView tableName={selectedTable} />
-      ) : (
+    <div className="flex-1 h-[89vh] overflow-hidden">
+      <div className="h-full flex flex-col md:p-0 sm:p-0">
+        {/* Header Section */}
+        <div className="flex flex-col gap-2 bg-gradient-to-r from-blue-500 to-blue-600 p-3 md:p-4   rounded-lg md:rounded-xl shadow-lg md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 md:p-2 rounded-lg md:rounded-xl bg-white/10 backdrop-blur-sm">
+              <Database className="w-4 h-4 md:w-5 md:h-5 text-white" />
+            </div>
         <div>
-          <div className="flex justify-between items-center mb-6">
-            <Button onClick={() => setIsCreateDialogOpen(true)}>
-              <Plus className="mr-2 h-4 w-4" />
-              Create Table
-            </Button>
+              <h2 className="text-base md:text-lg font-semibold text-white">DynamoDB Tables</h2>
+              <div className="flex items-center gap-1.5">
+                <p className="text-xs md:text-sm text-blue-100">Tables</p>
+                <span className="px-1.5 py-0.5 rounded-full bg-white/10 backdrop-blur-sm text-white text-xs">
+                  {tables.length}
+                </span>
+              </div>
+            </div>
           </div>
           
-          <Card>
-            <CardHeader>
-              <CardTitle>Tables</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <DataTable
-                data={tables}
-                columns={columns}
-                keyExtractor={(table) => table.name}
-                isLoading={loading}
-                emptyMessage="No tables found. Create your first table to get started."
-              />
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-4 md:grid-cols-2 mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Table Metrics</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-500">Monitor table performance and capacity usage</p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Backup & Restore</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-500">Manage table backups and point-in-time recovery</p>
-              </CardContent>
-            </Card>
+          <div className="flex flex-col gap-2 md:flex-row md:items-center">
+            {selectedTables.size > 0 && (
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs md:text-sm text-white">{selectedTables.size} selected</span>
+                <div className="flex gap-1">
+                  <Button
+                    onClick={handleCopySelected}
+                    className="bg-white/10 text-white hover:bg-white/20 transition-all duration-300 h-7 w-7 p-0 md:h-9 md:w-auto md:px-3"
+                  >
+                    <Copy className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                    <span className="hidden md:inline ml-1.5 text-sm">Copy</span>
+                  </Button>
+                  <Button
+                    onClick={handleDownloadSelected}
+                    className="bg-white/10 text-white hover:bg-white/20 transition-all duration-300 h-7 w-7 p-0 md:h-9 md:w-auto md:px-3"
+                  >
+                    <Download className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                    <span className="hidden md:inline ml-1.5 text-sm">Download</span>
+                  </Button>
+                  <Button
+                    onClick={handleDeleteSelected}
+                    className="bg-red-500/80 text-white hover:bg-red-500 transition-all duration-300 h-7 w-7 p-0 md:h-9 md:w-auto md:px-3"
+                  >
+                    <Trash2 className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                    <span className="hidden md:inline ml-1.5 text-sm">Delete</span>
+                  </Button>
+                </div>
+              </div>
+            )}
+            <div className="flex items-center gap-1 md:gap-2">
+              <div className="relative flex-1">
+                <div className="absolute inset-y-0 left-0 pl-2 flex items-center pointer-events-none">
+                  <Search className="h-3.5 w-3.5 md:h-4 md:w-4 text-gray-400" />
+                </div>
+                <Input
+                  type="text"
+                  placeholder="Search tables..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-7 md:pl-9 h-7 md:h-9 text-xs md:text-sm border-transparent bg-white/10 text-white placeholder:text-white/60 rounded-md md:rounded-lg focus:border-white/30 focus:ring-0 transition-all duration-300 w-full min-w-0"
+                />
+              </div>
+              <Button
+                onClick={() => setShowCreateDialog(true)}
+                className="bg-white text-blue-600 hover:bg-blue-50 transition-all duration-300 h-7 w-7 p-0 md:h-9 md:w-auto md:px-3"
+              >
+                <Plus className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                <span className="hidden md:inline ml-1.5 text-sm">Create Table</span>
+              </Button>
+            </div>
           </div>
         </div>
-      )}
 
-      <CreateTableDialog
-        isOpen={isCreateDialogOpen}
-        onClose={() => setIsCreateDialogOpen(false)}
-        onSubmit={handleCreateTable}
-      />
+        {/* Tables List */}
+        <div className="flex-1   overflow-hidden flex flex-col bg-white rounded-lg border border-gray-200 mt-2 md:mt-4">
+          {/* Table Header - Responsive for both Mobile and Desktop */}
+          <div className="flex items-center px-3 py-2 md:px-4 md:py-3 bg-gray-50 border-b border-gray-200 text-xs md:text-sm">
+            <div className="w-4 md:w-6 flex items-center justify-center">
+              <input
+                type="checkbox"
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 md:h-4 md:w-4"
+                checked={selectedTables.size === filteredTables.length && filteredTables.length > 0}
+                onChange={(e) => handleSelectAll(e.target.checked)}
+              />
+            </div>
+            <div className="flex-1 min-w-0 pl-4 ">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Name</div>
+            </div>
+            <div className="w-[100px] md:w-[120px] flex justify-center">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Status</div>
+            </div>
+            {/* Desktop-only columns */}
+            <div className="hidden lg:flex w-[120px] justify-center">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Partition key</div>
+            </div>
+            <div className="hidden lg:flex w-[100px] justify-center">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Sort key</div>
+            </div>
+            <div className="hidden lg:flex w-[100px] justify-center">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Indexes</div>
+            </div>
+            <div className="hidden xl:flex w-[150px] justify-center">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Replication Regions</div>
+            </div>
+            <div className="hidden lg:flex w-[150px] justify-center">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Deletion protection</div>
+            </div>
+            <div className="hidden md:flex w-[120px] justify-center">
+              <div className="text-xs md:text-sm font-medium text-gray-500">Read/Write</div>
+            </div>
+            <div className="w-6 md:w-8"></div>
+          </div>
+
+          {/* Scrollable Table Content */}
+          <div className="flex-1 overflow-y-auto">
+            {loading ? (
+              <div>
+                {[...Array(5)].map((_, i) => (
+                  <TableSkeleton key={i} />
+                ))}
+                {isInitialLoad && (
+                  <div className="px-3 py-2 md:px-4 md:py-3 bg-blue-50 border-t border-blue-100">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs md:text-sm text-blue-600">Loading tables...</span>
+                      <div className="w-20 md:w-48 h-1.5 md:h-2 bg-blue-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-blue-600 transition-all duration-500"
+                          style={{ width: `${loadingProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : filteredTables.length > 0 ? (
+              <div className="divide-y divide-gray-200">
+                {filteredTables.map((table) => {
+                  const details = tableDetails[table.TableName];
+                  const isExpanded = expandedTable === table.TableName;
+
+                  return (
+                    <div 
+                      key={table.TableName} 
+                      className="px-3 py-2 md:px-4 md:py-3 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => handleRowClick(table.TableName)}
+                    >
+                      <div className="flex items-center min-w-0">
+                        <div className="w-4 md:w-6 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 md:h-4 md:w-4"
+                            checked={selectedTables.has(table.TableName)}
+                            onChange={(e) => handleSelectTable(table.TableName, e.target.checked)}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0 pl-4">
+                          <div className="flex items-center gap-1.5 md:gap-2">
+                            <span className="text-xs md:text-sm font-medium text-blue-600 truncate">
+                              {table.TableName}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 md:mt-1 flex items-center gap-1.5 text-[10px] md:text-xs text-gray-500">
+                            <span>{!details ? '...' : details.KeySchema?.find(k => k.KeyType === 'HASH')?.AttributeName || '-'}</span>
+                            <span>•</span>
+                            <span>{!details ? '...' : details.BillingModeSummary?.BillingMode === 'PAY_PER_REQUEST' ? 'On-demand' : 'Provisioned'}</span>
+                          </div>
+                        </div>
+                        <div className="w-[100px] md:w-[120px] flex justify-center">
+                          <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] md:text-xs font-medium ${
+                            (details?.TableStatus || table.TableStatus) === 'ACTIVE' 
+                              ? 'bg-green-100 text-green-700' 
+                              : 'bg-yellow-100 text-yellow-700'
+                          }`}>
+                            {(details?.TableStatus || table.TableStatus) === 'ACTIVE' ? 'Active' : details?.TableStatus || table.TableStatus}
+                          </span>
+                        </div>
+                        <div className="hidden lg:flex w-[120px] justify-center">
+                          <span className="text-sm text-gray-600">
+                            {!details ? '...' : details.KeySchema?.find(k => k.KeyType === 'HASH')?.AttributeName || '-'}
+                          </span>
+                        </div>
+                        <div className="hidden lg:flex w-[100px] justify-center">
+                          <span className="text-sm text-gray-600">
+                            {!details ? '...' : details.KeySchema?.find(k => k.KeyType === 'RANGE')?.AttributeName || '-'}
+                          </span>
+                        </div>
+                        <div className="hidden lg:flex w-[100px] justify-center">
+                          <span className="text-sm text-gray-600">
+                            {!details ? '...' : 
+                              ((details.GlobalSecondaryIndexes?.length || 0) + 
+                               (details.LocalSecondaryIndexes?.length || 0))}
+                          </span>
+                        </div>
+                        <div className="hidden xl:flex w-[150px] justify-center">
+                          <span className="text-sm text-gray-600">
+                            {!details ? '...' : details.ReplicaDescriptions?.length || 0}
+                          </span>
+                        </div>
+                        <div className="hidden lg:flex w-[150px] justify-center">
+                          <span className="inline-flex items-center gap-1 text-sm text-gray-600">
+                            <span className={`h-2 w-2 rounded-full ${
+                              !details ? 'bg-gray-300' :
+                              details.DeletionProtectionEnabled ? 'bg-green-400' : 'bg-gray-300'
+                            }`}></span>
+                            {!details ? '...' : details.DeletionProtectionEnabled ? 'On' : 'Off'}
+                          </span>
+                        </div>
+                        <div className="hidden md:flex w-[120px] justify-center">
+                          <span className="text-sm text-gray-600">
+                            {!details ? '...' : 
+                              details.BillingModeSummary?.BillingMode === 'PAY_PER_REQUEST' 
+                                ? 'On-demand' 
+                                : 'Provisioned'}
+                          </span>
+                        </div>
+                        <div className="w-6 md:w-8 flex items-center justify-center">
+                          <ChevronRight className="h-3.5 w-3.5 md:h-4 md:w-4 text-gray-400 flex-shrink-0" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full py-6 md:py-8">
+                <div className="p-2 md:p-3 rounded-full bg-gray-100 mb-2 md:mb-3">
+                  <Database className="w-5 h-5 md:w-6 md:h-6 text-gray-400" />
+                </div>
+                <p className="text-xs md:text-sm text-gray-500">
+                  {searchTerm ? 'No tables match your search' : 'No tables found'}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Create Table Dialog - Mobile Responsive */}
+      <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
+        <DialogContent className="w-[calc(100%-32px)] md:w-[90vw] max-w-[425px] rounded-lg mx-4">
+          <DialogHeader>
+            <DialogTitle className="text-base md:text-xl font-semibold text-gray-900">Create New Table</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-3 md:gap-4 py-3 md:py-4">
+            <div className="space-y-1.5 md:space-y-2">
+              <label htmlFor="tableName" className="text-xs md:text-sm font-medium text-gray-700">
+                Table Name
+              </label>
+              <Input
+                id="tableName"
+                placeholder="Enter table name"
+                value={newTableName}
+                onChange={(e) => setNewTableName(e.target.value)}
+                className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+          <DialogFooter className="flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-2">
+            <Button
+              variant="outline"
+              onClick={() => setShowCreateDialog(false)}
+              className="w-full sm:w-auto border-gray-200 hover:bg-gray-50"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateTable}
+              disabled={creatingTable}
+              className="w-full sm:w-auto bg-blue-600 text-white hover:bg-blue-700"
+            >
+              {creatingTable ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                'Create Table'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
-};
-
-export default Page; 
+} 

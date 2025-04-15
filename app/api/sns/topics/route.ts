@@ -21,15 +21,15 @@ let snsClient: SNS | null = null;
 function validateEnvVars() {
   console.log('[SNS API] Validating environment variables...');
   const requiredEnvVars = {
-    AWS_REGION: process.env.AWS_REGION,
-    AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY: process.env.AWS_SECRET_ACCESS_KEY,
+    AWS_REGION: process.env.NEXT_PUBLIC_AWS_REGION,
+    AWS_ACCESS_KEY_ID: process.env.NEXT_PUBLIC_AWS_ACCESS_KEY_ID,
+    AWS_SECRET_ACCESS_KEY: process.env.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY,
   };
 
   console.log('[SNS API] Environment variables state:', {
-    region: process.env.AWS_REGION,
-    hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
-    hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+    region: process.env.NEXT_PUBLIC_AWS_REGION,
+    hasAccessKey: !!process.env.NEXT_PUBLIC_AWS_ACCESS_KEY_ID,
+    hasSecretKey: !!process.env.NEXT_PUBLIC_AWS_SECRET_ACCESS_KEY,
     nodeEnv: process.env.NODE_ENV,
   });
 

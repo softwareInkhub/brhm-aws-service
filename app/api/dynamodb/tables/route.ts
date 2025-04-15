@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DynamoDBClient, ListTablesCommand, CreateTableCommand, DeleteTableCommand } from '@aws-sdk/client-dynamodb';
+import { DynamoDBClient, ListTablesCommand, CreateTableCommand, DeleteTableCommand, DescribeTableCommand } from '@aws-sdk/client-dynamodb';
 import { logger } from '@/app/utils/logger';
 
 function validateEnvVars() {
@@ -24,51 +24,54 @@ const dynamoDBClient = new DynamoDBClient({
   },
 });
 
-export async function GET(request: NextRequest) {
-  logger.info('DynamoDB API: Handling GET request for tables', {
-    component: 'DynamoDB API',
-    data: { operation: 'GET' }
-  });
-
+export async function GET() {
+  logger.info('Fetching DynamoDB tables');
+  
   try {
     validateEnvVars();
 
-    const command = new ListTablesCommand({});
-    const response = await dynamoDBClient.send(command);
+    // Get all table names in batches
+    let allTableNames: string[] = [];
+    let lastEvaluatedTableName: string | undefined;
 
-    logger.info('DynamoDB API: Successfully retrieved tables', {
-      component: 'DynamoDB API',
-      data: { 
-        operation: 'GET',
-        tableCount: response.TableNames?.length || 0 
+    do {
+      const command = new ListTablesCommand({
+        Limit: 100,
+        ExclusiveStartTableName: lastEvaluatedTableName
+      });
+      const response = await dynamoDBClient.send(command);
+      
+      if (response.TableNames) {
+        allTableNames = allTableNames.concat(response.TableNames);
       }
-    });
+      
+      lastEvaluatedTableName = response.LastEvaluatedTableName;
+    } while (lastEvaluatedTableName);
 
-    return NextResponse.json({
-      tables: response.TableNames || [],
-      requestId: response.$metadata.requestId,
-      timestamp: new Date().toISOString()
-    });
+    if (allTableNames.length === 0) {
+      return NextResponse.json({ tables: [] });
+    }
+
+    // Return basic table information immediately
+    const basicTableInfo = allTableNames.map(tableName => ({
+      TableName: tableName,
+      TableStatus: 'ACTIVE',
+      KeySchema: [],
+      GlobalSecondaryIndexes: [],
+      LocalSecondaryIndexes: [],
+      BillingModeSummary: { BillingMode: 'PAY_PER_REQUEST' },
+      DeletionProtectionEnabled: false,
+    }));
+
+    return NextResponse.json({ tables: basicTableInfo });
+
   } catch (error) {
-    logger.error('DynamoDB API: Error retrieving tables', {
-      component: 'DynamoDB API',
-      data: {
-        operation: 'GET',
-        error: error instanceof Error ? {
-          name: error.name,
-          message: error.message,
-          stack: error.stack
-        } : 'Unknown error'
-      }
+    logger.error('Error fetching DynamoDB tables:', {
+      component: 'DynamoDB',
+      data: { error }
     });
-
     return NextResponse.json(
-      {
-        error: 'Failed to list tables',
-        message: error instanceof Error ? error.message : 'An unknown error occurred',
-        requestId: crypto.randomUUID(),
-        timestamp: new Date().toISOString()
-      },
+      { error: 'Failed to fetch DynamoDB tables' },
       { status: 500 }
     );
   }
@@ -364,6 +367,45 @@ export async function DELETE(request: NextRequest) {
         requestId: crypto.randomUUID(),
         timestamp: new Date().toISOString()
       },
+      { status: 500 }
+    );
+  }
+}
+
+// Add a new endpoint for fetching detailed table information
+export async function PATCH(request: Request) {
+  try {
+    const { tableName } = await request.json();
+
+    if (!tableName) {
+      return NextResponse.json(
+        { error: 'Table name is required' },
+        { status: 400 }
+      );
+    }
+
+    const describeCommand = new DescribeTableCommand({
+      TableName: tableName,
+    });
+    const tableDescription = await dynamoDBClient.send(describeCommand);
+    
+    return NextResponse.json({
+      TableName: tableName,
+      TableStatus: tableDescription.Table?.TableStatus || 'UNKNOWN',
+      KeySchema: tableDescription.Table?.KeySchema || [],
+      GlobalSecondaryIndexes: tableDescription.Table?.GlobalSecondaryIndexes || [],
+      LocalSecondaryIndexes: tableDescription.Table?.LocalSecondaryIndexes || [],
+      BillingModeSummary: tableDescription.Table?.BillingModeSummary || { BillingMode: 'PROVISIONED' },
+      DeletionProtectionEnabled: tableDescription.Table?.DeletionProtectionEnabled || false,
+    });
+
+  } catch (error) {
+    logger.error('Error fetching table details:', {
+      component: 'DynamoDB',
+      data: { error }
+    });
+    return NextResponse.json(
+      { error: 'Failed to fetch table details' },
       { status: 500 }
     );
   }

@@ -1,8 +1,10 @@
 'use client';
 
-import React, { type ReactElement } from 'react';
+import React, { type ReactElement, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { ChevronLeft, ChevronRight, Menu } from 'lucide-react';
+import { Button } from './ui/button';
 
 interface SidebarItem {
   name: string;
@@ -13,6 +15,20 @@ interface SidebarItem {
 
 export const Sidebar = () => {
   const pathname = usePathname();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  // Handle window resize
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth > 768) {
+        setIsMobileOpen(false);
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const sidebarItems: SidebarItem[] = [
     {
@@ -87,36 +103,97 @@ export const Sidebar = () => {
     },
   ];
 
+  const toggleSidebar = () => {
+    if (window.innerWidth <= 768) {
+      setIsMobileOpen(!isMobileOpen);
+    } else {
+      setIsCollapsed(!isCollapsed);
+    }
+  };
+
   return (
-    <aside className="fixed top-0 left-0 z-20 w-64 h-screen pt-16 bg-white border-r border-gray-200 transition-all duration-300 ease-in-out">
-      <div className="h-full px-3 pb-4 overflow-y-auto">
-        <ul className="space-y-2">
-          {sidebarItems.map((item) => (
-            <li key={item.name}>
-              <Link
-                href={item.href}
-                className={`flex items-center p-2 text-sm rounded-lg transition-all duration-200 group relative ${
-                  pathname === item.href
-                    ? 'bg-blue-50 text-blue-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
-                }`}
-              >
-                <span className={`transition-colors duration-200 ${
-                  pathname === item.href ? 'text-blue-600' : 'text-gray-500 group-hover:text-gray-900'
-                }`}>
-                  {item.icon}
-                </span>
-                <span className="ml-3">{item.name}</span>
-                {item.description && (
-                  <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap">
-                    {item.description}
-                  </div>
-                )}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </aside>
+    <>
+      {/* Mobile overlay */}
+      {isMobileOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+
+      {/* Mobile menu button */}
+      <Button
+        variant="ghost"
+        size="sm"
+        className="fixed top-4 left-4 z-50 md:hidden"
+        onClick={toggleSidebar}
+      >
+        <Menu className="h-5 w-5" />
+      </Button>
+
+      <aside 
+        className={`
+          fixed top-0 left-0 z-40 h-screen pt-16 bg-white border-r border-gray-200 
+          transition-all duration-300 ease-in-out
+          ${isCollapsed ? 'w-16' : 'w-64'} 
+          md:translate-x-0
+          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
+          md:block
+        `}
+      >
+        {/* Collapse button */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="absolute top-2 -right-3 hidden md:flex h-6 w-6 p-0 items-center justify-center rounded-full bg-white border border-gray-200 hover:bg-gray-100"
+          onClick={toggleSidebar}
+        >
+          {isCollapsed ? (
+            <ChevronRight className="h-3 w-3" />
+          ) : (
+            <ChevronLeft className="h-3 w-3" />
+          )}
+        </Button>
+
+        <div className="h-full px-3 pb-4 overflow-y-auto">
+          <ul className="space-y-2">
+            {sidebarItems.map((item) => (
+              <li key={item.name}>
+                <Link
+                  href={item.href}
+                  className={`
+                    flex items-center p-2 text-sm rounded-lg transition-all duration-200 group relative
+                    ${pathname === item.href
+                      ? 'bg-blue-50 text-blue-700'
+                      : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                    }
+                  `}
+                >
+                  <span className={`transition-colors duration-200 ${
+                    pathname === item.href ? 'text-blue-600' : 'text-gray-500 group-hover:text-gray-900'
+                  }`}>
+                    {item.icon}
+                  </span>
+                  <span className={`ml-3 whitespace-nowrap ${isCollapsed ? 'hidden' : 'block'}`}>
+                    {item.name}
+                  </span>
+                  {item.description && !isCollapsed && (
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap">
+                      {item.description}
+                    </div>
+                  )}
+                  {/* Show tooltip on hover when collapsed */}
+                  {isCollapsed && (
+                    <div className="absolute left-full ml-2 px-2 py-1 bg-gray-900 text-white text-xs rounded-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 whitespace-nowrap">
+                      {item.name}
+                    </div>
+                  )}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </aside>
+    </>
   );
 }; 

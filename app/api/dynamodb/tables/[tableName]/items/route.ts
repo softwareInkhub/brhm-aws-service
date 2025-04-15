@@ -390,62 +390,37 @@ export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ tableName: string }> }
 ) {
-  const { tableName } = await context.params;
-  logger.info('DynamoDB API: Handling PUT request for item update', {
-    component: 'DynamoDB API',
-    data: { operation: 'PUT', tableName }
-  });
-
   try {
-    validateEnvVars();
+    const params = await context.params;
+    const tableName = params.tableName;
+    
+    // Parse the request body
     const body = await request.json();
-    const { Key, UpdateData } = body;
-
-    if (!Key || !UpdateData) {
-      return createErrorResponse(new Error('Both Key and UpdateData are required for updating an item'), 400);
+    
+    // Validate the request body
+    if (!body || !body.Key) {
+      return NextResponse.json(
+        { 
+          error: 'Invalid request body',
+          message: 'Request body must include Key object',
+          requestId: crypto.randomUUID(),
+          timestamp: new Date().toISOString()
+        },
+        { status: 400, headers: corsHeaders() }
+      );
     }
 
-    // Build update expression and attribute values
-    const updateExpressions: string[] = [];
-    const expressionAttributeNames: Record<string, string> = {};
-    const expressionAttributeValues: Record<string, any> = {};
-
-    Object.entries(UpdateData).forEach(([key, value]) => {
-      const attributeName = `#${key}`;
-      const attributeValue = `:${key}`;
-      updateExpressions.push(`${attributeName} = ${attributeValue}`);
-      expressionAttributeNames[attributeName] = key;
-      expressionAttributeValues[attributeValue] = value;
-    });
-
-    const command = new UpdateItemCommand({
-      TableName: tableName,
-      Key: marshall(Key),
-      UpdateExpression: `SET ${updateExpressions.join(', ')}`,
-      ExpressionAttributeNames: expressionAttributeNames,
-      ExpressionAttributeValues: marshall(expressionAttributeValues),
-      ReturnValues: 'ALL_NEW'
-    });
-
-    const response = await dynamoDBClient.send(command);
-    const updatedItem = response.Attributes ? unmarshall(response.Attributes) : undefined;
-
-    logger.info('DynamoDB API: Successfully updated item', {
-      component: 'DynamoDB API',
-      data: { 
-        operation: 'PUT',
-        tableName,
-        key: Key
-      }
-    });
-
-    return createResponse({ item: updatedItem }, response.$metadata.requestId!);
+    // Call the handler with the correct context object
+    return handleUpdateItem({ 
+      request: { 
+        params: { tableName },
+        body: body
+      } 
+    }, request);
   } catch (error) {
-    logger.error('DynamoDB API: Error updating item', {
-      component: 'DynamoDB API',
+    logger.error(`${COMPONENT_NAME}: Error in PUT handler`, {
+      component: COMPONENT_NAME,
       data: {
-        operation: 'PUT',
-        tableName,
         error: error instanceof Error ? {
           name: error.name,
           message: error.message,
@@ -454,7 +429,15 @@ export async function PUT(
       }
     });
 
-    return createErrorResponse(error);
+    return NextResponse.json(
+      { 
+        error: 'Failed to process request',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        requestId: crypto.randomUUID(),
+        timestamp: new Date().toISOString()
+      },
+      { status: 500, headers: corsHeaders() }
+    );
   }
 }
 
