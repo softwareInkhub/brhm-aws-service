@@ -2,8 +2,6 @@
 const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
-  productionBrowserSourceMaps: false,
-  compress: true,
   env: {
     AWS_REGION: process.env.AWS_REGION,
     AWS_ACCESS_KEY_ID: process.env.AWS_ACCESS_KEY_ID,
@@ -15,7 +13,6 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ['localhost:3000'],
     },
-    optimizeCss: true,
   },
   // Add this to ensure environment variables are available during build
   serverRuntimeConfig: {
