@@ -1,4 +1,14 @@
-import { IAM } from '@aws-sdk/client-iam';
+import { 
+  IAM,
+  CreatePolicyCommand,
+  DeletePolicyCommand,
+  GetPolicyCommand,
+  ListPoliciesCommand,
+  CreatePolicyVersionCommand,
+  ListPolicyVersionsCommand,
+  DeletePolicyVersionCommand,
+  SetDefaultPolicyVersionCommand
+} from '@aws-sdk/client-iam';
 import { NextResponse } from 'next/server';
 import { validateOpenAPI } from '@/app/middleware/openapi-validator';
 import { NextRequest } from 'next/server';
@@ -62,10 +72,10 @@ async function handleGET(request: NextRequest) {
     const client = await getIAMClient();
     console.log(`[IAM API][${requestId}] Listing policies...`);
     
-    const { Policies } = await client.listPolicies({
-      Scope: 'All', // List all policies (AWS managed and customer managed)
-      OnlyAttached: false, // Include unattached policies
-    });
+    const { Policies } = await client.send(new ListPoliciesCommand({
+      Scope: 'All',
+      OnlyAttached: false,
+    }));
     
     console.log(`[IAM API][${requestId}] Found ${Policies?.length || 0} policies`);
 
@@ -74,9 +84,17 @@ async function handleGET(request: NextRequest) {
       PolicyArn: policy.Arn,
       Description: policy.Description,
       UpdateDate: policy.UpdateDate?.toISOString(),
+      CreateDate: policy.CreateDate?.toISOString(),
+      AttachmentCount: policy.AttachmentCount,
+      IsAttachable: policy.IsAttachable,
+      DefaultVersionId: policy.DefaultVersionId,
     })) || [];
 
-    return NextResponse.json(formattedPolicies);
+    return NextResponse.json({ 
+      policies: formattedPolicies,
+      requestId,
+      timestamp: new Date().toISOString()
+    });
   } catch (error) {
     console.error(`[IAM API][${requestId}] Error:`, error);
 
@@ -104,4 +122,169 @@ async function handleGET(request: NextRequest) {
   }
 }
 
-export const GET = (request: NextRequest) => validateOpenAPI(request, handleGET); 
+async function handlePOST(request: NextRequest) {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[IAM API][${requestId}] Handling POST request for policy operation`);
+
+  try {
+    const client = await getIAMClient();
+    const { action, ...data } = await request.json();
+
+    switch (action) {
+      case 'create': {
+        const { policyName, policyDocument, description, path } = data;
+        
+        const command = new CreatePolicyCommand({
+          PolicyName: policyName,
+          PolicyDocument: typeof policyDocument === 'string' 
+            ? policyDocument 
+            : JSON.stringify(policyDocument),
+          Description: description,
+          Path: path,
+        });
+
+        const response = await client.send(command);
+        return NextResponse.json({
+          policy: response.Policy,
+          message: 'Policy created successfully',
+          requestId,
+        });
+      }
+
+      case 'createVersion': {
+        const { policyArn, policyDocument, setAsDefault } = data;
+        
+        const command = new CreatePolicyVersionCommand({
+          PolicyArn: policyArn,
+          PolicyDocument: typeof policyDocument === 'string'
+            ? policyDocument
+            : JSON.stringify(policyDocument),
+          SetAsDefault: setAsDefault,
+        });
+
+        const response = await client.send(command);
+        return NextResponse.json({
+          version: response.PolicyVersion,
+          message: 'Policy version created successfully',
+          requestId,
+        });
+      }
+
+      case 'setDefaultVersion': {
+        const { policyArn, versionId } = data;
+        
+        const command = new SetDefaultPolicyVersionCommand({
+          PolicyArn: policyArn,
+          VersionId: versionId,
+        });
+
+        await client.send(command);
+        return NextResponse.json({
+          message: 'Default policy version updated successfully',
+          requestId,
+        });
+      }
+
+      case 'listVersions': {
+        const { policyArn } = data;
+        
+        const command = new ListPolicyVersionsCommand({
+          PolicyArn: policyArn,
+        });
+
+        const response = await client.send(command);
+        return NextResponse.json({
+          versions: response.Versions,
+          requestId,
+        });
+      }
+
+      default:
+        return NextResponse.json(
+          {
+            error: 'Invalid action',
+            message: 'The specified action is not supported',
+            requestId,
+          },
+          { status: 400 }
+        );
+    }
+  } catch (error) {
+    console.error(`[IAM API][${requestId}] Error:`, error);
+
+    return NextResponse.json(
+      {
+        error: 'Failed to process policy operation',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        requestId,
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+async function handleDELETE(request: NextRequest) {
+  const requestId = Math.random().toString(36).substring(7);
+  console.log(`[IAM API][${requestId}] Handling DELETE request for policy`);
+
+  try {
+    const client = await getIAMClient();
+    const { searchParams } = new URL(request.url);
+    
+    const policyArn = searchParams.get('policyArn');
+    const versionId = searchParams.get('versionId');
+
+    if (!policyArn) {
+      return NextResponse.json(
+        {
+          error: 'Missing required parameter',
+          message: 'Policy ARN is required',
+          requestId,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (versionId) {
+      // Delete specific version
+      const command = new DeletePolicyVersionCommand({
+        PolicyArn: policyArn,
+        VersionId: versionId,
+      });
+
+      await client.send(command);
+      return NextResponse.json({
+        message: `Policy version ${versionId} deleted successfully`,
+        requestId,
+      });
+    } else {
+      // Delete entire policy
+      const command = new DeletePolicyCommand({
+        PolicyArn: policyArn,
+      });
+
+      await client.send(command);
+      return NextResponse.json({
+        message: 'Policy deleted successfully',
+        requestId,
+      });
+    }
+  } catch (error) {
+    console.error(`[IAM API][${requestId}] Error:`, error);
+
+    return NextResponse.json(
+      {
+        error: 'Failed to delete policy',
+        message: error instanceof Error ? error.message : 'Unknown error',
+        requestId,
+        timestamp: new Date().toISOString(),
+      },
+      { status: 500 }
+    );
+  }
+}
+
+export const GET = (request: NextRequest) => validateOpenAPI(request, handleGET);
+export const POST = (request: NextRequest) => validateOpenAPI(request, handlePOST);
+export const DELETE = (request: NextRequest) => validateOpenAPI(request, handleDELETE); 

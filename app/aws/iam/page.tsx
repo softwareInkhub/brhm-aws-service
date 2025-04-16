@@ -32,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/app/components/ui/select";
+import { useRouter } from 'next/navigation';
 
 interface IAMUser {
   UserName: string;
@@ -52,6 +53,9 @@ interface ExtendedIAMPolicy {
   Description?: string;
   CreateDate: Date;
   UpdateDate?: Date;
+  AttachmentCount?: number;
+  IsAttachable?: boolean;
+  DefaultVersionId?: string;
 }
 
 export default function IAMPage() {
@@ -85,9 +89,22 @@ export default function IAMPage() {
   const [isPolicyModalOpen, setIsPolicyModalOpen] = useState(false);
   const [isAttaching, setIsAttaching] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [createType, setCreateType] = useState<'user' | 'role' | 'group' | 'policy'>('user');
+  const [createType, setCreateType] = useState<'user' | 'role' | 'group' | 'policy' | null>(null);
   const [newName, setNewName] = useState('');
   const [newDescription, setNewDescription] = useState('');
+  const [accessTypes, setAccessTypes] = useState({
+    programmatic: false,
+    console: false
+  });
+  const [password, setPassword] = useState('');
+  const [isCreatingUser, setIsCreatingUser] = useState(false);
+  const [policyDocument, setPolicyDocument] = useState<string>('');
+  const [policyPath, setPolicyPath] = useState<string>('/');
+  const [selectedPolicy, setSelectedPolicy] = useState<ExtendedIAMPolicy | null>(null);
+  const [isPolicyDetailsModalOpen, setIsPolicyDetailsModalOpen] = useState(false);
+  const [policyVersions, setPolicyVersions] = useState<any[]>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const router = useRouter();
 
   async function loadRoles() {
     logger.info('IAMPage: Starting to load roles', {
@@ -149,11 +166,72 @@ export default function IAMPage() {
     }
   };
 
+  const fetchGroups = async () => {
+    try {
+      const response = await fetch("/api/iam/groups");
+      const data = await response.json();
+      setGroups(data.groups || []);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch IAM groups",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleCreate = async () => {
     try {
       switch (createType) {
         case 'user':
-          // Implement user creation
+          setIsCreatingUser(true);
+          const response = await fetch("/api/iam/users", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              userName: newName,
+              password: password,
+              accessTypes: {
+                programmatic: accessTypes.programmatic,
+                console: accessTypes.console
+              }
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error('Failed to create user');
+          }
+
+          const data = await response.json();
+          
+          // Close the dialog first
+          setCreateType(null);
+          setCreateDialogOpen(false);
+          
+          // Then show success message
+          toast({
+            title: "Success",
+            description: "User created successfully",
+          });
+
+          // If programmatic access was enabled, show the credentials
+          if (accessTypes.programmatic && data.credentials) {
+            toast({
+              title: "Access Key Created",
+              description: "Please save these credentials securely. You won't be able to see them again.",
+              duration: 10000,
+            });
+          }
+
+          // Reset form
+          setNewName('');
+          setPassword('');
+          setAccessTypes({ programmatic: false, console: false });
+          
+          // Refresh users list
+          fetchUsers();
           break;
         case 'role':
           // Existing role creation logic
@@ -165,15 +243,14 @@ export default function IAMPage() {
           // Implement policy creation
           break;
       }
-      setCreateDialogOpen(false);
-      setNewName('');
-      setNewDescription('');
     } catch (error: any) {
       toast({
         title: "Error",
         description: `Failed to create ${createType}: ${error?.message || 'Unknown error occurred'}`,
         variant: "destructive",
       });
+    } finally {
+      setIsCreatingUser(false);
     }
   };
 
@@ -191,26 +268,34 @@ export default function IAMPage() {
         method: "DELETE",
       });
 
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete');
+      }
 
       toast({
         title: "Success",
         description: `${type === "user" ? "User" : type === "group" ? "Group" : type === "role" ? "Role" : "Policy"} deleted successfully`,
       });
 
+      // Close the details modal if we're deleting a role
+      if (type === "role") {
+        setIsDetailsModalOpen(false);
+      }
+
       if (type === "user") {
         fetchUsers();
       } else if (type === "group") {
-        // Implement group deletion logic
+        fetchGroups();
       } else if (type === "role") {
         loadRoles();
       } else if (type === "policy") {
-        // Implement policy deletion logic
+        loadPolicies();
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: `Failed to delete ${type}`,
+        description: error instanceof Error ? error.message : "Failed to delete",
         variant: "destructive",
       });
     }
@@ -222,6 +307,7 @@ export default function IAMPage() {
     });
     loadRoles();
     fetchUsers();
+    fetchGroups();
     loadPolicies();
   }, []);
 
@@ -270,14 +356,40 @@ export default function IAMPage() {
 
   const handleCreateRole = async () => {
     try {
-      logger.info('Creating new IAM role', {
-        component: 'IAMPage',
-        data: { roleName: newRole.RoleName }
+      setLoading(true);
+      const response = await fetch("/api/iam/roles", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: "create",
+          roleName: newName,
+          description: newDescription,
+          assumeRolePolicyDocument: JSON.stringify(newRole.AssumeRolePolicyDocument)
+        }),
       });
 
-      const createdRole = await createRole(newRole);
-      setRoles([...roles, createdRole]);
-      setIsCreateModalOpen(false);
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create role');
+      }
+
+      const data = await response.json();
+      
+      // Close the dialog first
+      setCreateType(null);
+      setCreateDialogOpen(false);
+      
+      // Then show success message
+      toast({
+        title: "Success",
+        description: "Role created successfully",
+      });
+
+      // Reset form
+      setNewName('');
+      setNewDescription('');
       setNewRole({
         RoleName: '',
         Description: '',
@@ -294,18 +406,17 @@ export default function IAMPage() {
           ]
         }
       });
-    } catch (error) {
-      logger.error('Failed to create IAM role', {
-        component: 'IAMPage',
-        data: {
-          error: error instanceof Error ? {
-            name: error.name,
-            message: error.message,
-            stack: error.stack
-          } : 'Unknown error'
-        }
+      
+      // Refresh roles list
+      loadRoles();
+    } catch (error: any) {
+      toast({
+        title: "Error",
+        description: `Failed to create role: ${error?.message || 'Unknown error occurred'}`,
+        variant: "destructive",
       });
-      setError(error instanceof Error ? error.message : 'Failed to create IAM role');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -368,6 +479,63 @@ export default function IAMPage() {
             stack: error.stack
           } : 'Unknown error'
         }
+      });
+    }
+  };
+
+  const handlePolicyClick = async (policy: ExtendedIAMPolicy) => {
+    setSelectedPolicy(policy);
+    setIsPolicyDetailsModalOpen(true);
+    
+    // Load policy versions
+    setIsLoadingVersions(true);
+    try {
+      const response = await fetch("/api/iam/policies", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          action: 'listVersions',
+          policyArn: policy.PolicyArn
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to fetch policy versions');
+      
+      const data = await response.json();
+      setPolicyVersions(data.versions || []);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to load policy versions",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  };
+
+  const handleDeletePolicy = async (policyArn: string) => {
+    try {
+      const response = await fetch(`/api/iam/policies?policyArn=${encodeURIComponent(policyArn)}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error('Failed to delete policy');
+
+      toast({
+        title: "Success",
+        description: "Policy deleted successfully",
+      });
+
+      loadPolicies();
+      setIsPolicyDetailsModalOpen(false);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to delete policy",
+        variant: "destructive",
       });
     }
   };
@@ -494,7 +662,8 @@ export default function IAMPage() {
               {users.map((user) => (
                 <Card 
                   key={user.UserName} 
-                  className="group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-blue-100 hover:border-blue-200 hover:-translate-y-1"
+                  className="group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-blue-100 hover:border-blue-200 hover:-translate-y-1 cursor-pointer"
+                  onClick={() => router.push(`/aws/iam/${user.UserName}`)}
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-blue-50 to-purple-50 opacity-0 group-hover:opacity-100 transition-opacity" />
                   <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
@@ -536,108 +705,136 @@ export default function IAMPage() {
 
         <TabsContent value="groups" className="space-y-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center gap-2">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-2xl font-semibold bg-gradient-to-r from-purple-600 to-purple-400 bg-clip-text text-transparent">Groups</h2>
-                  <Badge variant="secondary" className="rounded-full px-3 bg-purple-100 text-purple-700">
-                    {groups.length}
-                  </Badge>
-                  <Button variant="ghost" size="icon" className="ml-1 text-purple-600 hover:text-purple-700 hover:bg-purple-50">
-                    <Info className="w-4 h-4" />
-                  </Button>
-                </div>
-                <p className="text-sm text-muted-foreground">Create and manage IAM groups.</p>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {/* implement groups refresh */}}
-                  className="gap-2 hover:border-purple-500 hover:text-purple-500 transition-colors"
-                >
-                  <RefreshCcw className="w-4 h-4" />
-                  Refresh
-                </Button>
-                <Button 
-                  size="sm"
-                  onClick={() => {
-                    setCreateType("group");
-                    setCreateDialogOpen(true);
-                  }}
-                  className="gap-2 bg-gradient-to-r from-purple-600 to-purple-400 hover:from-purple-700 hover:to-purple-500 text-white shadow-lg shadow-purple-200 transition-all hover:shadow-xl hover:shadow-purple-300"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create group
-                </Button>
-              </div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-2xl font-semibold text-violet-600">Groups</h2>
+              <Badge variant="secondary" className="rounded-full bg-violet-100 text-violet-700">
+                {groups.length}
+              </Badge>
+              <Button variant="ghost" size="icon" className="ml-1 text-violet-600 hover:text-violet-700 hover:bg-violet-50">
+                <Info className="w-4 h-4" />
+              </Button>
+              <p className="text-sm text-gray-500 ml-2">Create and manage IAM groups.</p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={fetchGroups}
+                className="gap-2 hover:border-violet-500 hover:text-violet-500 transition-colors"
+              >
+                <RefreshCcw className="w-4 h-4" />
+                Refresh
+              </Button>
+              <Button 
+                size="sm"
+                onClick={() => {
+                  setCreateType("group");
+                  setCreateDialogOpen(true);
+                }}
+                className="gap-2 bg-violet-500 hover:bg-violet-600 text-white"
+              >
+                <Plus className="w-4 h-4" />
+                Create group
+              </Button>
             </div>
           </div>
+
           {loading ? (
-            <div className="flex items-center justify-center h-32">
+            <div className="flex items-center justify-center h-64">
               <div className="animate-pulse flex items-center gap-2">
-                <div className="h-4 w-4 bg-purple-200 rounded-full animate-bounce"></div>
-                <p className="text-muted-foreground">Loading groups...</p>
+                <div className="h-4 w-4 bg-violet-200 rounded-full animate-bounce"></div>
+                <p className="text-gray-500">Loading groups...</p>
               </div>
             </div>
           ) : groups.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-64 space-y-4 bg-gradient-to-b from-purple-50 to-transparent rounded-lg border-2 border-dashed border-purple-200">
-              <Group className="w-12 h-12 text-purple-300" />
+            <div className="flex flex-col items-center justify-center h-64 space-y-4 bg-gradient-to-b from-violet-50 to-transparent rounded-lg border-2 border-dashed border-violet-200">
+              <Group className="w-12 h-12 text-violet-300" />
               <div className="text-center space-y-2">
-                <p className="text-muted-foreground">No IAM groups found.</p>
+                <p className="text-gray-500">No IAM groups found.</p>
                 <Button
                   variant="link"
                   onClick={() => {
                     setCreateType("group");
                     setCreateDialogOpen(true);
                   }}
-                  className="text-purple-600 hover:text-purple-700"
+                  className="text-violet-600 hover:text-violet-700"
                 >
                   Create your first group
                 </Button>
               </div>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {groups.map((group) => (
-                <Card 
-                  key={group.GroupName} 
-                  className="group relative overflow-hidden transition-all duration-300 hover:shadow-xl hover:shadow-purple-100 hover:border-purple-200 hover:-translate-y-1"
-                >
-                  <div className="absolute inset-0 bg-gradient-to-r from-purple-50 to-pink-50 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  <CardHeader className="relative flex flex-row items-center justify-between space-y-0 pb-2">
-                    <div className="flex items-center gap-2">
-                      <div className="p-2 rounded-full bg-purple-100 text-purple-600">
-                        <Group className="w-4 h-4" />
-                      </div>
-                      <CardTitle className="text-sm font-medium">
-                        {group.GroupName}
-                      </CardTitle>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="opacity-0 group-hover:opacity-100 transition-all duration-300 hover:bg-red-50 hover:text-red-600"
-                      onClick={() => handleDelete("group", group.GroupName)}
+            <div className="rounded-xl border border-gray-200 overflow-hidden bg-white shadow-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-gradient-to-r from-violet-50 to-violet-100/50">
+                    <TableHead className="w-[30px]">
+                      <input type="checkbox" className="rounded border-violet-300" />
+                    </TableHead>
+                    <TableHead className="font-medium text-violet-700">Group name</TableHead>
+                    <TableHead className="font-medium text-violet-700">Description</TableHead>
+                    <TableHead className="font-medium text-violet-700">Users</TableHead>
+                    <TableHead className="font-medium text-violet-700">Created</TableHead>
+                    <TableHead className="w-[100px]"></TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {groups.map((group) => (
+                    <TableRow 
+                      key={group.GroupName}
+                      className="group hover:bg-violet-50/50 transition-all duration-300"
                     >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
-                  </CardHeader>
-                  <CardContent className="relative">
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground bg-gray-50 p-2 rounded-md">
-                        <Key className="w-3 h-3 text-purple-500" />
-                        <span className="truncate font-mono">{group.Arn}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <Badge variant="secondary" className="text-xs bg-gradient-to-r from-purple-100 to-pink-100 text-purple-700">
-                          Created: {new Date(group.CreateDate).toLocaleDateString()}
+                      <TableCell>
+                        <input type="checkbox" className="rounded border-violet-300" />
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="p-1.5 rounded-lg bg-violet-100 text-violet-600">
+                            <Group className="w-4 h-4" />
+                          </div>
+                          <span className="font-medium text-gray-900">{group.GroupName}</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-gray-500">-</span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary" className="bg-violet-50 text-violet-700">
+                          {group.UserCount} users
                         </Badge>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                          <span className="text-sm text-gray-600">
+                            {new Date(group.CreateDate).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-violet-100 hover:text-violet-600"
+                            onClick={() => router.push(`/aws/iam/groups/${group.GroupName}`)}
+                          >
+                            <Settings className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-red-100 hover:text-red-600"
+                            onClick={() => handleDelete("group", group.GroupName)}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
         </TabsContent>
@@ -864,7 +1061,7 @@ export default function IAMPage() {
                   <Info className="w-4 h-4" />
                 </Button>
               </div>
-              <p className="text-sm text-muted-foreground">A policy is an object in AWS that defines permissions.</p>
+              <p className="text-sm text-muted-foreground">Manage permissions by creating and configuring IAM policies.</p>
             </div>
             <div className="flex gap-2">
               <Button
@@ -894,7 +1091,7 @@ export default function IAMPage() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Search for policies"
+                placeholder="Search for policies by name, description, or ARN"
                 className="pl-10 border-orange-200 focus:border-orange-500 focus:ring-orange-500 transition-colors"
                 value={policySearch}
                 onChange={(e) => setPolicySearch(e.target.value)}
@@ -908,10 +1105,10 @@ export default function IAMPage() {
                 </div>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All types</SelectItem>
+                <SelectItem value="all">All policies</SelectItem>
                 <SelectItem value="aws">AWS managed</SelectItem>
                 <SelectItem value="customer">Customer managed</SelectItem>
-                <SelectItem value="job">AWS managed - job function</SelectItem>
+                <SelectItem value="job">Job function</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -955,17 +1152,20 @@ export default function IAMPage() {
                       </div>
                     </TableHead>
                     <TableHead className="font-semibold text-orange-700">Type</TableHead>
-                    <TableHead className="font-semibold text-orange-700">Used as</TableHead>
                     <TableHead className="font-semibold text-orange-700">Description</TableHead>
+                    <TableHead className="font-semibold text-orange-700">Last updated</TableHead>
+                    <TableHead className="font-semibold text-orange-700">Usage</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {(policySearch ? filteredPolicies : policies).map((policy) => (
                     <TableRow 
                       key={policy.PolicyArn}
-                      className="group hover:bg-orange-50/50 transition-colors"
+                      className="group hover:bg-orange-50/50 transition-colors cursor-pointer"
+                      onClick={() => handlePolicyClick(policy)}
                     >
-                      <TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
                         <input type="checkbox" className="rounded border-orange-300" />
                       </TableCell>
                       <TableCell>
@@ -973,21 +1173,67 @@ export default function IAMPage() {
                           <div className="p-1 rounded-md bg-orange-100 text-orange-600 group-hover:bg-orange-200 transition-colors">
                             <FileText className="w-4 h-4" />
                           </div>
-                          <span className="font-medium text-orange-600 hover:text-orange-700 cursor-pointer">
+                          <span className="font-medium text-orange-600 hover:text-orange-700">
                             {policy.PolicyName}
                           </span>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-200">
-                          AWS managed
+                        <Badge 
+                          variant="secondary" 
+                          className={cn(
+                            "bg-opacity-50",
+                            policy.PolicyArn.includes('iam::aws') 
+                              ? "bg-blue-100 text-blue-700" 
+                              : "bg-orange-100 text-orange-700"
+                          )}
+                        >
+                          {policy.PolicyArn.includes('iam::aws') ? 'AWS managed' : 'Customer managed'}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm text-gray-600">None</span>
+                        <span className="text-sm line-clamp-1 text-gray-600">
+                          {policy.Description || 'No description'}
+                        </span>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm line-clamp-1 text-gray-600">{policy.Description || '-'}</span>
+                        <div className="flex items-center gap-2">
+                          <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                          <span className="text-sm text-gray-600">
+                            {new Date(policy.UpdateDate || '').toLocaleDateString()}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="border-orange-200 text-orange-700">
+                          {policy.AttachmentCount || 0} attachments
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-orange-100 hover:text-orange-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePolicyClick(policy);
+                            }}
+                          >
+                            <Settings className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 hover:bg-red-100 hover:text-red-600"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeletePolicy(policy.PolicyArn);
+                            }}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -998,7 +1244,7 @@ export default function IAMPage() {
 
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>Showing {policies.length} policies</span>
+              <span>Showing {(policySearch ? filteredPolicies : policies).length} policies</span>
             </div>
             <div className="flex items-center gap-2">
               <Button 
@@ -1017,7 +1263,7 @@ export default function IAMPage() {
                 >
                   1
                 </Button>
-                <span className="text-sm text-muted-foreground">of 68</span>
+                <span className="text-sm text-muted-foreground">of {Math.ceil(policies.length / 10)}</span>
               </div>
               <Button 
                 variant="outline" 
@@ -1031,111 +1277,540 @@ export default function IAMPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[425px] bg-gradient-to-br from-white to-gray-50">
-          <DialogHeader>
-            <DialogTitle className="text-xl font-semibold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-              Create New {createType.charAt(0).toUpperCase() + createType.slice(1)}
+      {/* Create User Dialog */}
+      <Dialog open={createType === "user"} onOpenChange={(open) => {
+        if (!open) {
+          setCreateType(null);
+          setNewName('');
+          setPassword('');
+          setAccessTypes({ programmatic: false, console: false });
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden bg-white">
+          <div className="px-6 py-4 bg-gradient-to-r from-blue-600 to-violet-500">
+            <DialogTitle className="text-2xl font-semibold text-white flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Create New User
             </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-6 py-4">
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant={createType === "user" ? "default" : "outline"}
-                onClick={() => setCreateType("user")}
-                className={cn(
-                  "gap-2 transition-all",
-                  createType === "user" && "bg-gradient-to-r from-blue-600 to-blue-400 text-white"
-                )}
-              >
-                <Users className="w-4 h-4" />
-                User
-              </Button>
-              <Button
-                variant={createType === "role" ? "default" : "outline"}
-                onClick={() => setCreateType("role")}
-                className={cn(
-                  "gap-2 transition-all",
-                  createType === "role" && "bg-gradient-to-r from-navy-600 to-brown-600 text-white"
-                )}
-              >
-                <Shield className="w-4 h-4" />
-                Role
-              </Button>
-              <Button
-                variant={createType === "group" ? "default" : "outline"}
-                onClick={() => setCreateType("group")}
-                className={cn(
-                  "gap-2 transition-all",
-                  createType === "group" && "bg-gradient-to-r from-purple-600 to-purple-400 text-white"
-                )}
-              >
-                <Group className="w-4 h-4" />
-                Group
-              </Button>
-              <Button
-                variant={createType === "policy" ? "default" : "outline"}
-                onClick={() => setCreateType("policy")}
-                className={cn(
-                  "gap-2 transition-all",
-                  createType === "policy" && "bg-gradient-to-r from-orange-500 to-orange-400 text-white"
-                )}
-              >
-                <FileText className="w-4 h-4" />
-                Policy
-              </Button>
-            </div>
-            <Separator className="bg-gradient-to-r from-gray-200 via-gray-300 to-gray-200" />
+            <p className="text-blue-100 mt-1 text-sm">Add a new IAM user to your AWS account</p>
+          </div>
+
+          <div className="p-6 space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="name" className="text-sm font-medium text-gray-700">
-                {createType.charAt(0).toUpperCase() + createType.slice(1)} Name
-              </Label>
-              <Input
-                id="name"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder={`Enter ${createType} name`}
-                className="border-gray-200 focus:border-blue-500 focus:ring-blue-500"
-              />
-            </div>
-            {(createType === 'role' || createType === 'policy') && (
-              <div className="space-y-2">
-                <Label htmlFor="description" className="text-sm font-medium text-gray-700">
-                  Description
-                </Label>
-                <Textarea
-                  id="description"
-                  value={newDescription}
-                  onChange={(e) => setNewDescription(e.target.value)}
-                  placeholder={`Enter ${createType} description`}
-                  className="border-gray-200 focus:border-blue-500 focus:ring-blue-500 min-h-[100px]"
+              <Label className="text-sm font-medium text-gray-700">Username</Label>
+              <div className="relative">
+                <Users className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input 
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="pl-10 h-9 border-gray-200 focus:border-violet-500 focus:ring-violet-500"
+                  placeholder="Enter username"
                 />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <Label className="text-sm font-medium text-gray-700">Access Type</Label>
+              <div className="space-y-2">
+                <div 
+                  className={cn(
+                    "relative flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-all duration-200 hover:bg-gray-50",
+                    accessTypes.programmatic 
+                      ? "border-blue-200 bg-blue-50/50" 
+                      : "border-gray-200"
+                  )}
+                  onClick={() => setAccessTypes(prev => ({ ...prev, programmatic: !prev.programmatic }))}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 rounded-md bg-gray-100">
+                      <Key className="h-4 w-4 text-gray-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-900">Programmatic access</p>
+                      <p className="text-xs text-gray-500">Access key ID and secret access key</p>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={accessTypes.programmatic}
+                    onChange={() => setAccessTypes(prev => ({ ...prev, programmatic: !prev.programmatic }))}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div 
+                  className={cn(
+                    "relative flex items-center justify-between px-3 py-2 rounded-lg border cursor-pointer transition-all duration-200 hover:bg-gray-50",
+                    accessTypes.console 
+                      ? "border-blue-200 bg-blue-50/50" 
+                      : "border-gray-200"
+                  )}
+                  onClick={() => setAccessTypes(prev => ({ ...prev, console: !prev.console }))}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-1.5 rounded-md bg-gray-100">
+                      <Settings className="h-4 w-4 text-gray-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-900">AWS Management Console access</p>
+                      <p className="text-xs text-gray-500">Password for console login</p>
+                    </div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={accessTypes.console}
+                    onChange={() => setAccessTypes(prev => ({ ...prev, console: !prev.console }))}
+                    className="h-4 w-4 rounded border-gray-300 text-blue-500 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {accessTypes.console && (
+              <div className="space-y-2 animate-in slide-in-from-top duration-200">
+                <Label className="text-sm font-medium text-gray-700">Console Password</Label>
+                <div className="relative">
+                  <Key className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input 
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10 h-9 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                    placeholder="Enter console password"
+                  />
+                </div>
               </div>
             )}
           </div>
-          <DialogFooter>
-            <Button 
-              onClick={handleCreate} 
-              disabled={!newName}
+
+          <div className="border-t border-gray-100 bg-gray-50/50 p-4 flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateType(null);
+                setNewName('');
+                setPassword('');
+                setAccessTypes({ programmatic: false, console: false });
+              }}
+              className="border-gray-200 hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={!newName || (accessTypes.console && !password) || isCreatingUser}
               className={cn(
-                "gap-2 transition-all",
-                createType === "user" && "bg-gradient-to-r from-blue-600 to-blue-400",
-                createType === "role" && "bg-gradient-to-r from-navy-600 to-brown-600",
-                createType === "group" && "bg-gradient-to-r from-purple-600 to-purple-400",
-                createType === "policy" && "bg-gradient-to-r from-orange-500 to-orange-400",
-                "text-white shadow-lg hover:shadow-xl",
-                !newName && "opacity-50 cursor-not-allowed"
+                "min-w-[100px] text-white transition-all duration-200",
+                isCreatingUser
+                  ? "bg-gray-400"
+                  : "bg-gradient-to-r from-blue-600 to-violet-500 hover:from-blue-700 hover:to-violet-600"
               )}
             >
-              <Plus className="w-4 h-4" />
-              Create {createType.charAt(0).toUpperCase() + createType.slice(1)}
+              {isCreatingUser ? (
+                <div className="flex items-center justify-center gap-2">
+                  <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                  <span>Creating...</span>
+                </div>
+              ) : (
+                'Create User'
+              )}
             </Button>
-          </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
+      {/* Create Group Dialog */}
+      <Dialog open={createType === "group"} onOpenChange={(open) => {
+        if (!open) {
+          setCreateType(null);
+          setNewName('');
+          setNewDescription('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px] p-0 overflow-hidden bg-white">
+          <div className="px-6 py-4 bg-gradient-to-r from-violet-600 to-purple-600">
+            <DialogTitle className="text-2xl font-semibold text-white flex items-center gap-2">
+              <Group className="w-5 h-5" />
+              Create New Group
+            </DialogTitle>
+            <p className="text-violet-100 mt-1 text-sm">Add a new IAM group to your AWS account</p>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Group Name</Label>
+              <div className="relative">
+                <Group className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input 
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="pl-10 h-9 border-gray-200 focus:border-violet-500 focus:ring-violet-500"
+                  placeholder="Enter group name"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Description</Label>
+              <Textarea 
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                className="min-h-[100px] border-gray-200 focus:border-violet-500 focus:ring-violet-500"
+                placeholder="Enter group description"
+              />
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100 bg-gray-50/50 p-4 flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateType(null);
+                setNewName('');
+                setNewDescription('');
+              }}
+              className="border-gray-200 hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreate}
+              disabled={!newName}
+              className="bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:from-violet-700 hover:to-purple-700"
+            >
+              Create Group
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Role Dialog */}
+      <Dialog open={createType === "role"} onOpenChange={(open) => {
+        if (!open) {
+          setCreateType(null);
+          setNewName('');
+          setNewDescription('');
+        }
+      }}>
+        <DialogContent className="sm:max-w-[600px] p-0 overflow-hidden bg-white">
+          <div className="px-6 py-4 bg-gradient-to-r from-slate-900 to-blue-900">
+            <DialogTitle className="text-2xl font-semibold text-white flex items-center gap-2">
+              <Shield className="w-5 h-5" />
+              Create New Role
+            </DialogTitle>
+            <p className="text-slate-300 mt-1 text-sm">Create an IAM role to delegate permissions to AWS services</p>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Role Name</Label>
+              <div className="relative">
+                <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <Input 
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  className="pl-10 h-9 border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                  placeholder="Enter role name"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Description</Label>
+              <Textarea 
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                className="min-h-[100px] border-gray-200 focus:border-blue-500 focus:ring-blue-500"
+                placeholder="Enter role description"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label className="text-sm font-medium text-gray-700">Trusted Entity Type</Label>
+              <Select
+                value={newRole.AssumeRolePolicyDocument.Statement[0].Principal.Service}
+                onValueChange={(value) => setNewRole(prev => ({
+                  ...prev,
+                  AssumeRolePolicyDocument: {
+                    ...prev.AssumeRolePolicyDocument,
+                    Statement: [{
+                      ...prev.AssumeRolePolicyDocument.Statement[0],
+                      Principal: { Service: value }
+                    }]
+                  }
+                }))}
+              >
+                <SelectTrigger className="w-full border-gray-200 h-9 focus:border-blue-500 focus:ring-blue-500">
+                  <SelectValue placeholder="Select AWS service" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="lambda.amazonaws.com">AWS Lambda</SelectItem>
+                  <SelectItem value="ec2.amazonaws.com">Amazon EC2</SelectItem>
+                  <SelectItem value="ecs-tasks.amazonaws.com">Amazon ECS Tasks</SelectItem>
+                  <SelectItem value="eks.amazonaws.com">Amazon EKS</SelectItem>
+                  <SelectItem value="amplify.amazonaws.com">AWS Amplify</SelectItem>
+                  <SelectItem value="apigateway.amazonaws.com">API Gateway</SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-gray-500 mt-1">
+                Select which AWS service will be allowed to assume this role
+              </p>
+            </div>
+
+            <div className="p-4 bg-blue-50 rounded-lg border border-blue-100">
+              <div className="flex gap-2">
+                <Info className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-blue-700">
+                  <p className="font-medium">About trust relationships</p>
+                  <p className="mt-1 text-blue-600">The trusted entity you select will be able to assume this role and inherit its permissions. You can modify the trust relationship later.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100 bg-gray-50/50 p-4 flex justify-end gap-3">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setCreateType(null);
+                setNewName('');
+                setNewDescription('');
+              }}
+              className="border-gray-200 hover:bg-gray-100 transition-colors"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleCreateRole}
+              disabled={!newName || !newRole.AssumeRolePolicyDocument.Statement[0].Principal.Service}
+              className="bg-gradient-to-r from-slate-900 to-blue-900 text-white hover:from-slate-800 hover:to-blue-800"
+            >
+              Create Role
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Policy Dialog */}
+      <Dialog open={createType === "policy"} onOpenChange={(open) => {
+        if (!open) {
+          setCreateType(null);
+          setNewName('');
+          setNewDescription('');
+          setPolicyDocument('');
+          setPolicyPath('/');
+        }
+      }}>
+        <DialogContent className="sm:max-w-[800px] p-0 overflow-hidden bg-white">
+          <div className="px-6 py-4 bg-gradient-to-r from-orange-500 to-orange-600">
+            <DialogTitle className="text-2xl font-semibold text-white flex items-center gap-2">
+              <FileText className="w-5 h-5" />
+              Create New Policy
+            </DialogTitle>
+            <p className="text-orange-100 mt-1 text-sm">Define permissions by creating a new IAM policy</p>
+          </div>
+
+          <div className="p-6 space-y-6">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Policy Name</Label>
+                  <div className="relative">
+                    <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input 
+                      value={newName}
+                      onChange={(e) => setNewName(e.target.value)}
+                      className="pl-10 h-9 border-gray-200 focus:border-orange-500 focus:ring-orange-500"
+                      placeholder="Enter policy name"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Description</Label>
+                  <Textarea 
+                    value={newDescription}
+                    onChange={(e) => setNewDescription(e.target.value)}
+                    className="min-h-[100px] border-gray-200 focus:border-orange-500 focus:ring-orange-500"
+                    placeholder="Describe the purpose of this policy"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-gray-700">Path (Optional)</Label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400">/</div>
+                    <Input 
+                      value={policyPath}
+                      onChange={(e) => setPolicyPath(e.target.value)}
+                      className="pl-7 h-9 border-gray-200 focus:border-orange-500 focus:ring-orange-500 font-mono text-sm"
+                      placeholder="custom/path"
+                    />
+                  </div>
+                  <p className="text-xs text-gray-500">
+                    Organize policies by path (e.g., /department/team/)
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-gray-700">Policy Document</Label>
+                <div className="relative">
+                  <Textarea 
+                    value={policyDocument}
+                    onChange={(e) => setPolicyDocument(e.target.value)}
+                    className="min-h-[280px] font-mono text-sm border-gray-200 focus:border-orange-500 focus:ring-orange-500"
+                    placeholder={`{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "service:Action"
+      ],
+      "Resource": "*"
+    }
+  ]
+}`}
+                  />
+                  <div className="absolute bottom-2 right-2 flex gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs hover:bg-orange-50 hover:text-orange-600"
+                      onClick={() => {
+                        try {
+                          const formatted = JSON.stringify(JSON.parse(policyDocument), null, 2);
+                          setPolicyDocument(formatted);
+                        } catch (error) {
+                          toast({
+                            title: "Invalid JSON",
+                            description: "Please check your policy document format",
+                            variant: "destructive",
+                          });
+                        }
+                      }}
+                    >
+                      Format JSON
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs hover:bg-orange-50 hover:text-orange-600"
+                      onClick={() => {
+                        setPolicyDocument(`{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "service:Action"
+      ],
+      "Resource": "*"
+    }
+  ]
+}`);
+                      }}
+                    >
+                      Reset
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 mt-2 p-3 bg-orange-50 rounded-lg border border-orange-100">
+                  <Info className="w-4 h-4 text-orange-600 flex-shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-orange-800">Policy Document Format</p>
+                    <p className="mt-1 text-orange-700">
+                      Define permissions using JSON. Include Version and Statement with Effect, Action, and Resource.
+                      Use * for all resources or specify ARNs for granular control.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="border-t border-gray-100 bg-gray-50/50 p-4 flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <Info className="w-4 h-4 text-gray-400" />
+              <span className="text-sm text-gray-500">
+                The policy will be created in your AWS account
+              </span>
+            </div>
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCreateType(null);
+                  setNewName('');
+                  setNewDescription('');
+                  setPolicyDocument('');
+                  setPolicyPath('/');
+                }}
+                className="border-gray-200 hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  try {
+                    // Validate JSON
+                    JSON.parse(policyDocument);
+                    
+                    const response = await fetch("/api/iam/policies", {
+                      method: "POST",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        action: "create",
+                        policyName: newName,
+                        description: newDescription,
+                        policyDocument,
+                        path: policyPath,
+                      }),
+                    });
+
+                    if (!response.ok) {
+                      throw new Error('Failed to create policy');
+                    }
+
+                    toast({
+                      title: "Success",
+                      description: "Policy created successfully",
+                    });
+
+                    // Reset form and close dialog
+                    setCreateType(null);
+                    setNewName('');
+                    setNewDescription('');
+                    setPolicyDocument('');
+                    setPolicyPath('/');
+                    
+                    // Refresh policies list
+                    loadPolicies();
+                  } catch (error) {
+                    toast({
+                      title: "Error",
+                      description: error instanceof Error ? error.message : "Failed to create policy",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                disabled={!newName || !policyDocument}
+                className="bg-gradient-to-r from-orange-500 to-orange-600 text-white hover:from-orange-600 hover:to-orange-700"
+              >
+                Create Policy
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Role Details Dialog */}
       <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
         <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+          <DialogTitle className="sr-only">Role Details</DialogTitle>
           <div className="flex flex-col h-full">
             {/* Header */}
             <div className="border-b p-4 bg-gradient-to-r from-slate-900 to-blue-900">
@@ -1254,7 +1929,11 @@ export default function IAMPage() {
                                       <span className="font-medium">{policy.PolicyName}</span>
                                     </div>
                                   </TableCell>
-                                  <TableCell>AWS managed</TableCell>
+                                  <TableCell>
+                                    <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-200">
+                                      Customer managed
+                                    </Badge>
+                                  </TableCell>
                                   <TableCell className="text-right">
                                     <Button
                                       variant="ghost"
@@ -1312,7 +1991,9 @@ export default function IAMPage() {
                                 <TableRow key={policy.PolicyArn}>
                                   <TableCell className="font-medium">{policy.PolicyName}</TableCell>
                                   <TableCell>
-                                    <Badge variant="secondary">AWS managed</Badge>
+                                    <Badge variant="secondary" className="bg-orange-100 text-orange-700 hover:bg-orange-200">
+                                      Customer managed
+                                    </Badge>
                                   </TableCell>
                                   <TableCell>Policy description here</TableCell>
                                   <TableCell className="text-right">

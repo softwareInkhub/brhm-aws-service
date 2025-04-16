@@ -1,18 +1,28 @@
 import { NextResponse } from 'next/server';
-import { listGroups, createGroup, deleteGroup } from '@/app/services/iam';
-import { logger } from '@/app/utils/logger';
+import { 
+  ListGroupsCommand, 
+  CreateGroupCommand, 
+  DeleteGroupCommand,
+  AddUserToGroupCommand,
+  RemoveUserFromGroupCommand,
+  GetGroupCommand
+} from '@aws-sdk/client-iam';
+import { getIAMClient } from '../../../utils/aws';
 
 export async function GET() {
   try {
-    const response = await listGroups();
-    return NextResponse.json(response);
-  } catch (error) {
-    logger.error('Error in GET /api/iam/groups:', { 
-      component: 'IAMGroups',
-      data: { error: error instanceof Error ? error.message : 'Unknown error' }
+    const client = getIAMClient();
+    const command = new ListGroupsCommand({});
+    const response = await client.send(command);
+
+    return NextResponse.json({
+      groups: response.Groups || [],
+      requestId: response.$metadata.requestId
     });
+  } catch (error) {
+    console.error('Error listing groups:', error);
     return NextResponse.json(
-      { error: 'Failed to fetch IAM groups' },
+      { error: 'Failed to list groups' },
       { status: 500 }
     );
   }
@@ -20,23 +30,55 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const { groupName } = await request.json();
-    if (!groupName) {
-      return NextResponse.json(
-        { error: 'groupName is required' },
-        { status: 400 }
-      );
-    }
+    const { action, groupName, userName } = await request.json();
+    const client = getIAMClient();
 
-    const group = await createGroup(groupName);
-    return NextResponse.json({ group });
+    switch (action) {
+      case 'create': {
+        const command = new CreateGroupCommand({
+          GroupName: groupName
+        });
+        const response = await client.send(command);
+        return NextResponse.json({
+          group: response.Group,
+          requestId: response.$metadata.requestId
+        });
+      }
+
+      case 'addUser': {
+        const command = new AddUserToGroupCommand({
+          GroupName: groupName,
+          UserName: userName
+        });
+        const response = await client.send(command);
+        return NextResponse.json({
+          success: true,
+          requestId: response.$metadata.requestId
+        });
+      }
+
+      case 'removeUser': {
+        const command = new RemoveUserFromGroupCommand({
+          GroupName: groupName,
+          UserName: userName
+        });
+        const response = await client.send(command);
+        return NextResponse.json({
+          success: true,
+          requestId: response.$metadata.requestId
+        });
+      }
+
+      default:
+        return NextResponse.json(
+          { error: 'Invalid action' },
+          { status: 400 }
+        );
+    }
   } catch (error) {
-    logger.error('Error in POST /api/iam/groups:', { 
-      component: 'IAMGroups',
-      data: { error: error instanceof Error ? error.message : 'Unknown error' }
-    });
+    console.error('Error processing group operation:', error);
     return NextResponse.json(
-      { error: 'Failed to create IAM group' },
+      { error: 'Failed to process group operation' },
       { status: 500 }
     );
   }
@@ -46,23 +88,28 @@ export async function DELETE(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const groupName = searchParams.get('groupName');
-    
+
     if (!groupName) {
       return NextResponse.json(
-        { error: 'groupName is required' },
+        { error: 'Group name is required' },
         { status: 400 }
       );
     }
 
-    await deleteGroup(groupName);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    logger.error('Error in DELETE /api/iam/groups:', { 
-      component: 'IAMGroups',
-      data: { error: error instanceof Error ? error.message : 'Unknown error' }
+    const client = getIAMClient();
+    const command = new DeleteGroupCommand({
+      GroupName: groupName
     });
+    
+    const response = await client.send(command);
+    return NextResponse.json({
+      success: true,
+      requestId: response.$metadata.requestId
+    });
+  } catch (error) {
+    console.error('Error deleting group:', error);
     return NextResponse.json(
-      { error: 'Failed to delete IAM group' },
+      { error: 'Failed to delete group' },
       { status: 500 }
     );
   }
