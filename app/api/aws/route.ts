@@ -1,86 +1,71 @@
 import { NextResponse } from 'next/server';
-import { S3 } from '@aws-sdk/client-s3';
-import { DynamoDB, ScalarAttributeType, KeyType } from '@aws-sdk/client-dynamodb';
-import { Lambda } from '@aws-sdk/client-lambda';
-import { APIGateway } from '@aws-sdk/client-api-gateway';
-import { IAM } from '@aws-sdk/client-iam';
+import { SFNClient } from '@aws-sdk/client-sfn';
+import { SNSClient, ListTopicsCommand } from "@aws-sdk/client-sns";
+import { LambdaClient, ListFunctionsCommand } from "@aws-sdk/client-lambda";
+import { SQSClient, ListQueuesCommand } from "@aws-sdk/client-sqs";
+import { DynamoDBClient, ListTablesCommand } from "@aws-sdk/client-dynamodb";
+import { S3Client, ListBucketsCommand } from "@aws-sdk/client-s3";
 
-// Initialize AWS clients
-const s3Client = new S3({
-  region: process.env.AWS_REGION,
+const config = {
+  region: process.env.AWS_REGION || 'us-east-1',
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
+    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
+  }
+};
 
-const dynamoClient = new DynamoDB({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
-
-const lambdaClient = new Lambda({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
-
-const apiGatewayClient = new APIGateway({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
-
-const iamClient = new IAM({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
-  },
-});
+// Initialize AWS clients with the same config
+const sfnClient = new SFNClient(config);
+const snsClient = new SNSClient(config);
+const lambdaClient = new LambdaClient(config);
+const sqsClient = new SQSClient(config);
+const dynamodbClient = new DynamoDBClient(config);
+const s3Client = new S3Client(config);
 
 // S3 Routes
 export async function GET(request: Request) {
-  const url = new URL(request.url);
-  const path = url.pathname.split('/').filter(Boolean);
+  const { searchParams } = new URL(request.url);
+  const service = searchParams.get('service');
 
   try {
-    switch (path[1]) {
-      case 's3':
-        const { Buckets } = await s3Client.listBuckets({});
-        return NextResponse.json(Buckets);
-
-      case 'dynamodb':
-        const { TableNames } = await dynamoClient.listTables({});
-        return NextResponse.json(TableNames);
+    let data;
+    switch (service) {
+      case 'sns':
+        const snsResponse = await snsClient.send(new ListTopicsCommand({}));
+        data = snsResponse.Topics?.map(topic => topic.TopicArn) || [];
+        break;
 
       case 'lambda':
-        const { Functions } = await lambdaClient.listFunctions({});
-        return NextResponse.json(Functions);
+        const lambdaResponse = await lambdaClient.send(new ListFunctionsCommand({}));
+        data = lambdaResponse.Functions?.map(fn => ({
+          arn: fn.FunctionArn,
+          name: fn.FunctionName
+        })) || [];
+        break;
 
-      case 'apigateway':
-        const { items } = await apiGatewayClient.getRestApis({});
-        return NextResponse.json(items);
+      case 'sqs':
+        const sqsResponse = await sqsClient.send(new ListQueuesCommand({}));
+        data = sqsResponse.QueueUrls || [];
+        break;
 
-      case 'iam':
-        const { Roles } = await iamClient.listRoles({});
-        return NextResponse.json(Roles);
+      case 'dynamodb':
+        const dynamoResponse = await dynamodbClient.send(new ListTablesCommand({}));
+        data = dynamoResponse.TableNames || [];
+        break;
+
+      case 's3':
+        const s3Response = await s3Client.send(new ListBucketsCommand({}));
+        data = s3Response.Buckets?.map(bucket => bucket.Name) || [];
+        break;
 
       default:
         return NextResponse.json({ error: 'Invalid service' }, { status: 400 });
     }
+
+    return NextResponse.json({ data });
   } catch (error) {
-    return NextResponse.json(
-      { error: `Failed to list ${path[1]} resources` },
-      { status: 500 }
-    );
+    console.error(`Error fetching ${service} resources:`, error);
+    return NextResponse.json({ error: 'Failed to fetch resources' }, { status: 500 });
   }
 }
 

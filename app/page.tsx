@@ -54,6 +54,16 @@ const serviceCards = [
       </svg>
     ),
   },
+  {
+    title: 'Step Functions',
+    description: 'Build visual workflows for applications',
+    href: '/aws/stepfunctions',
+    icon: (
+      <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+      </svg>
+    ),
+  },
 ];
 
 export default function Home() {

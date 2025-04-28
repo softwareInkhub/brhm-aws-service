@@ -4,12 +4,9 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/app/components/ui2/button';
 import { Input } from '@/app/components/ui2/input';
 import { Label } from '@/app/components/ui2/label';
-import { Card, CardContent, CardHeader, CardTitle } from '@/app/components/ui2/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/app/components/ui2/dialog';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/app/components/ui2/table';
 import { useToast } from '@/app/components/ui2/use-toast';
 import { Loader2, Upload, Trash2, FolderPlus, FileText, Image as ImageIcon, Video, FileSpreadsheet, FileCode, File, FolderOpen, ChevronRight, Download, Edit, Save, X } from 'lucide-react';
-import { FilePreview } from '@/app/components/FilePreview';
 import { Textarea } from '@/app/components/ui/textarea';
 
 interface Bucket {
