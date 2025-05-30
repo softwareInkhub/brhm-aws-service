@@ -30,6 +30,9 @@ interface Trigger {
   status?: 'Active' | 'Inactive';
   details?: string;
   icon?: React.ReactNode;
+  resourcePath?: string;
+  method?: string;
+  uri?: string;
 }
 
 interface PageProps {
@@ -84,6 +87,7 @@ export default function Page({ params }: PageProps) {
       if (!response.ok) throw new Error('Failed to fetch triggers');
       const data = await response.json();
       setTriggers(data.triggers || []);
+      console.log('Fetched triggers:', data.triggers);
     } catch (error) {
       console.error('Error fetching triggers:', error);
       setError('Failed to fetch triggers');
@@ -713,8 +717,7 @@ export default function Page({ params }: PageProps) {
                           className="flex items-center gap-4 p-4 border rounded-xl bg-white hover:shadow-md transition-all duration-300"
                         >
                           <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100">
-                            {/* Icon logic can be improved based on type */}
-                            {trigger.type === 'API Gateway' ? <Globe className="w-6 h-6 text-blue-600" /> : <Database className="w-6 h-6 text-green-600" />}
+                            {(trigger.type === 'API Gateway' || trigger.type === 'API Gateway (REST)') ? <Globe className="w-6 h-6 text-blue-600" /> : <Database className="w-6 h-6 text-green-600" />}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="font-medium text-gray-900">{trigger.type}</div>
@@ -723,6 +726,13 @@ export default function Page({ params }: PageProps) {
                                 <div><strong>Name:</strong> {trigger.name}</div>
                                 <div><strong>Endpoint:</strong> {trigger.endpoint}</div>
                                 <div><strong>Protocol:</strong> {trigger.protocolType}</div>
+                              </div>
+                            ) : trigger.type === 'API Gateway (REST)' ? (
+                              <div className="text-sm text-gray-500">
+                                <div><strong>Name:</strong> {trigger.name}</div>
+                                <div><strong>Resource:</strong> {trigger.resourcePath}</div>
+                                <div><strong>Method:</strong> {trigger.method}</div>
+                                <div><strong>URI:</strong> {trigger.uri}</div>
                               </div>
                             ) : (
                               <div className="text-sm text-gray-500">
@@ -832,22 +842,41 @@ export default function Page({ params }: PageProps) {
                 </div>
                 <div className="space-y-2">
                   {triggers.length > 0 ? (
-                    triggers.map((trigger) => (
-                      <div key={trigger.type} className="flex items-center gap-2 p-2 rounded-lg bg-white/80 hover:bg-white transition-all duration-200">
+                    triggers.map((trigger, idx) => (
+                      <div key={trigger.uuid || trigger.apiId || trigger.type + idx} className="flex items-center gap-2 p-2 rounded-lg bg-white/80 hover:bg-white transition-all duration-200">
                         <div className="p-1.5 rounded-md bg-gradient-to-br from-gray-50 to-gray-100">
-                          {trigger.icon}
+                          {(trigger.type === 'API Gateway' || trigger.type === 'API Gateway (REST)') ? <Globe className="h-5 w-5 text-blue-600" /> : <Database className="h-5 w-5 text-green-600" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-sm font-medium text-gray-900">{trigger.type}</div>
-                          <div className="text-xs text-gray-500 truncate">{trigger.details}</div>
+                          {trigger.type === 'API Gateway (REST)' ? (
+                            <div className="text-xs text-gray-500 truncate">
+                              <div><strong>Name:</strong> {trigger.name}</div>
+                              <div><strong>Resource:</strong> {trigger.resourcePath}</div>
+                              <div><strong>Method:</strong> {trigger.method}</div>
+                            </div>
+                          ) : trigger.type === 'API Gateway' ? (
+                            <div className="text-xs text-gray-500 truncate">
+                              <div><strong>Name:</strong> {trigger.name}</div>
+                              <div><strong>Endpoint:</strong> {trigger.endpoint}</div>
+                              <div><strong>Protocol:</strong> {trigger.protocolType}</div>
+                            </div>
+                          ) : (
+                            <div className="text-xs text-gray-500 truncate">
+                              <div><strong>ARN:</strong> {trigger.arn}</div>
+                              <div><strong>State:</strong> {trigger.state}</div>
+                            </div>
+                          )}
                         </div>
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                          trigger.status === 'Active' 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {trigger.status}
-                        </span>
+                        {trigger.state && (
+                          <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                            trigger.state === 'Enabled' || trigger.state === 'Active'
+                              ? 'bg-green-100 text-green-700'
+                              : 'bg-gray-100 text-gray-700'
+                          }`}>
+                            {trigger.state || 'Active'}
+                          </span>
+                        )}
                       </div>
                     ))
                   ) : (

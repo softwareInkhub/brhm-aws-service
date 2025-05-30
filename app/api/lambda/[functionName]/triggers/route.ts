@@ -76,6 +76,7 @@ export async function GET(
     });
     const restApis = await apiGatewayV1Client.send(new GetRestApisCommand({}));
     for (const restApi of restApis.items || []) {
+      console.log('REST API:', restApi.name, restApi.id);
       const resources = await apiGatewayV1Client.send(new GetResourcesCommand({ restApiId: restApi.id! }));
       for (const resource of resources.items || []) {
         for (const method of Object.keys(resource.resourceMethods || {})) {
@@ -84,8 +85,9 @@ export async function GET(
             resourceId: resource.id!,
             httpMethod: method,
           }));
+          console.log('Resource:', resource.path, 'Method:', method, 'Integration URI:', integration.uri);
           if (
-            integration.type === 'AWS' &&
+            (integration.type === 'AWS' || integration.type === 'AWS_PROXY') &&
             integration.uri &&
             integration.uri.includes(lambdaArn)
           ) {
@@ -102,6 +104,7 @@ export async function GET(
       }
     }
 
+    console.log('Returning triggers:', triggers);
     return NextResponse.json({ triggers });
   } catch (error) {
     console.error('Error fetching Lambda triggers:', error);
