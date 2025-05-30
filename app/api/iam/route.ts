@@ -3,6 +3,14 @@ import { NextResponse } from 'next/server';
 import { validateOpenAPI } from '@/app/middleware/openapi-validator';
 import { NextRequest } from 'next/server';
 
+// Add debug logging
+console.log('[IAM API] Environment check:', {
+  hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+  hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
+  nodeEnv: process.env.NODE_ENV
+});
+
 const iamClient = new IAM({
   region: process.env.AWS_REGION,
   credentials: {

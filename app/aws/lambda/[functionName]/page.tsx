@@ -8,19 +8,6 @@ import { Label } from '@/app/components/ui/label';
 import { useToast } from "@/app/components/ui/use-toast";
 import { ChevronDown } from 'lucide-react';
 import { AddTriggerModal } from "../components/AddTriggerModal";
-import { 
-  LambdaClient, 
-  ListEventSourceMappingsCommand, 
-  GetFunctionCommand,
-  ListFunctionEventInvokeConfigsCommand,
-  GetFunctionUrlConfigCommand,
-  PublishVersionCommand,
-  CreateAliasCommand,
-  DeleteFunctionCommand,
-  PutFunctionConcurrencyCommand,
-  ListVersionsByFunctionCommand
-} from "@aws-sdk/client-lambda";
-import { createTrigger } from '../components/TriggerService';
 import { Database, Table, MessageSquare, Bell, Globe, Zap, Activity, Link } from 'lucide-react';
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/app/components/ui/dialog';
@@ -28,13 +15,21 @@ import { ExportInfrastructureModal } from "../components/ExportInfrastructureMod
 import { UploadCodeModal } from '../components/UploadCodeModal';
 
 interface Trigger {
-  id: string;
+  // For event source mappings (SQS, etc.)
   type: string;
-  source: string;
-  status: 'Active' | 'Inactive';
-  name: string;
-  details: string;
-  icon: ReactNode;
+  arn?: string;
+  uuid?: string;
+  state?: string;
+  batchSize?: number;
+  // For API Gateway
+  name?: string;
+  apiId?: string;
+  endpoint?: string;
+  protocolType?: string;
+  // For UI compatibility
+  status?: 'Active' | 'Inactive';
+  details?: string;
+  icon?: React.ReactNode;
 }
 
 interface PageProps {
@@ -42,14 +37,6 @@ interface PageProps {
     functionName: string;
   }>;
 }
-
-const lambdaClient = new LambdaClient({ 
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || ''
-  }
-});
 
 export default function Page({ params }: PageProps) {
   const { functionName } = use(params);
@@ -92,137 +79,17 @@ export default function Page({ params }: PageProps) {
     try {
       setIsLoading(true);
       setError(null);
-
-      // Fetch Lambda function details and URL config
-      const [functionResponse, functionUrlResponse] = await Promise.all([
-        lambdaClient.send(
-          new GetFunctionCommand({
-            FunctionName: functionName
-          })
-        ),
-        lambdaClient.send(
-          new GetFunctionUrlConfigCommand({
-            FunctionName: functionName
-          })
-        ).catch(() => null) // Ignore error if function URL doesn't exist
-      ]);
-
-      // Update function details in state
-      if (functionResponse.Configuration) {
-        setFunctionDetails({
-          runtime: functionResponse.Configuration.Runtime || '',
-          handler: functionResponse.Configuration.Handler || '',
-          description: functionResponse.Configuration.Description || '-',
-          lastModified: functionResponse.Configuration.LastModified || '',
-          arn: functionResponse.Configuration.FunctionArn || '',
-          memorySize: functionResponse.Configuration.MemorySize || 128,
-          timeout: functionResponse.Configuration.Timeout || 3,
-          state: functionResponse.Configuration.State || 'Active',
-          functionUrl: functionUrlResponse?.FunctionUrl || null
-        });
-      }
-
-      // Fetch all triggers
-      const [eventSourceMappings, eventInvokeConfigs] = await Promise.all([
-        // Event Source Mappings (DynamoDB, Kinesis, SQS)
-        lambdaClient.send(
-          new ListEventSourceMappingsCommand({
-            FunctionName: functionName,
-            MaxItems: 50
-          })
-        ),
-        
-        // Event Invoke Configs (EventBridge, CloudWatch)
-        lambdaClient.send(
-          new ListFunctionEventInvokeConfigsCommand({
-            FunctionName: functionName
-          })
-        )
-      ]);
-
-      // Fetch API Gateway triggers
-      let apiGatewayTriggers = { items: [] };
-      try {
-        const response = await fetch(`/api/lambda/${functionName}/triggers`);
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        apiGatewayTriggers = await response.json();
-      } catch (apiError) {
-        console.warn('Failed to fetch API Gateway triggers:', apiError);
-        // Continue with empty API Gateway triggers
-      }
-
-      const allTriggers: Trigger[] = [];
-
-      // Process Event Source Mappings
-      if (eventSourceMappings.EventSourceMappings) {
-        eventSourceMappings.EventSourceMappings.forEach((mapping) => {
-          const sourceType = mapping.EventSourceArn?.split(':')[2] || 'unknown';
-          allTriggers.push({
-            id: mapping.UUID || '',
-            type: getSourceTypeName(sourceType),
-            source: mapping.EventSourceArn || '',
-            status: mapping.State === 'Enabled' ? 'Active' : 'Inactive',
-            name: getSourceTypeName(sourceType),
-            details: `${getSourceTypeName(sourceType)} - ${mapping.EventSourceArn?.split('/').pop() || ''}`,
-            icon: getSourceTypeIcon(sourceType)
-          });
-        });
-      }
-
-      // Process Event Invoke Configs
-      if (eventInvokeConfigs.FunctionEventInvokeConfigs) {
-        eventInvokeConfigs.FunctionEventInvokeConfigs.forEach((config) => {
-          if (config.DestinationConfig?.OnSuccess?.Destination) {
-            allTriggers.push({
-              id: `event-${config.FunctionArn}`,
-              type: 'EventBridge',
-              source: config.DestinationConfig.OnSuccess.Destination,
-              status: 'Active',
-              name: 'EventBridge Trigger',
-              details: `Success destination: ${config.DestinationConfig.OnSuccess.Destination}`,
-              icon: getSourceTypeIcon('eventbridge')
-            });
-          }
-        });
-      }
-
-      // Process API Gateway Triggers
-      if (apiGatewayTriggers.items) {
-        apiGatewayTriggers.items.forEach((trigger: any) => {
-          allTriggers.push({
-            id: trigger.id,
-            type: 'API Gateway',
-            source: trigger.apiId,
-            status: trigger.status,
-            name: 'API Gateway',
-            details: `${trigger.method} ${trigger.path}`,
-            icon: getSourceTypeIcon('api-gateway')
-          });
-        });
-      }
-
-      // Check for Function URL
-      if (functionUrlResponse?.FunctionUrl) {
-        allTriggers.push({
-          id: 'function-url',
-          type: 'Function URL',
-          source: functionUrlResponse.FunctionUrl,
-          status: 'Active',
-          name: 'Function URL',
-          details: functionUrlResponse.FunctionUrl,
-          icon: getSourceTypeIcon('function-url')
-        });
-      }
-
-      setTriggers(allTriggers);
+      // Fetch triggers from backend API
+      const response = await fetch(`/api/lambda/${functionName}/triggers`);
+      if (!response.ok) throw new Error('Failed to fetch triggers');
+      const data = await response.json();
+      setTriggers(data.triggers || []);
     } catch (error) {
       console.error('Error fetching triggers:', error);
-      setError('Failed to fetch triggers and function details');
+      setError('Failed to fetch triggers');
       toast({
         title: "Error",
-        description: "Failed to fetch function details and triggers",
+        description: "Failed to fetch triggers",
         variant: "destructive"
       });
     } finally {
@@ -232,17 +99,10 @@ export default function Page({ params }: PageProps) {
 
   const fetchVersions = async () => {
     try {
-      const response = await lambdaClient.send(
-        new ListVersionsByFunctionCommand({
-          FunctionName: functionName,
-          MaxItems: 50
-        })
-      );
-
-      if (response.Versions) {
-        const versionNumbers = response.Versions.map(v => v.Version || '$LATEST');
-        setVersions(['$LATEST', ...versionNumbers.filter(v => v !== '$LATEST')]);
-      }
+      const response = await fetch(`/api/lambda/${functionName}/versions`);
+      if (!response.ok) throw new Error('Failed to fetch versions');
+      const data = await response.json();
+      setVersions(data.versions || ['$LATEST']);
     } catch (error) {
       console.error('Error fetching versions:', error);
       toast({
@@ -255,24 +115,23 @@ export default function Page({ params }: PageProps) {
 
   const fetchFunctionDetails = async () => {
     try {
-      const response = await fetch(`/api/aws/lambda/${encodeURIComponent(functionName)}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch function details');
-      }
-
+      const response = await fetch(`/api/lambda/functions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ functionName }),
+      });
+      if (!response.ok) throw new Error('Failed to fetch function details');
       const data = await response.json();
-      const config = data.function.Configuration;
-
       setFunctionDetails({
-        runtime: config.Runtime || '',
-        handler: config.Handler || '',
-        description: config.Description || '-',
-        lastModified: config.LastModified || '',
-        arn: config.FunctionArn || '',
-        memorySize: config.MemorySize || 128,
-        timeout: config.Timeout || 3,
-        state: config.State || 'Active',
-        functionUrl: data.function.FunctionUrl || null
+        runtime: data.data.function.Runtime || '',
+        handler: data.data.function.Handler || '',
+        description: data.data.function.Description || '-',
+        lastModified: data.data.function.LastModified || '',
+        arn: data.data.function.FunctionArn || '',
+        memorySize: data.data.function.MemorySize || 128,
+        timeout: data.data.function.Timeout || 3,
+        state: data.data.function.State || 'Active',
+        functionUrl: data.data.function.FunctionUrl || null
       });
     } catch (error) {
       console.error('Error fetching function details:', error);
@@ -350,9 +209,7 @@ export default function Page({ params }: PageProps) {
   const handleAddTrigger = async (triggerType: string, source: string) => {
     try {
       const newTrigger: Trigger = {
-        id: Math.random().toString(36).substr(2, 9),
         type: triggerType,
-        source: source,
         status: 'Active',
         name: `${triggerType} Trigger`,
         details: `Trigger from ${source}`,
@@ -394,28 +251,26 @@ export default function Page({ params }: PageProps) {
     }
   };
 
-  // Function to handle throttle
   const handleThrottle = async () => {
     try {
       setIsThrottling(true);
-      const response = await lambdaClient.send(
-        new PutFunctionConcurrencyCommand({
-          FunctionName: functionName,
-          ReservedConcurrentExecutions: 0 // Set to zero to throttle
-        })
-      );
-      
+      const response = await fetch(`/api/lambda/${functionName}/throttle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reservedConcurrentExecutions: 0 }),
+      });
+      if (!response.ok) throw new Error('Failed to throttle function');
       toast({
         title: "Success",
         description: "Function throttled successfully",
         duration: 3000
       });
       setIsThrottleDialogOpen(false);
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error updating throttle:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to throttle function",
+        description: error instanceof Error ? error.message : "Failed to throttle function",
         variant: "destructive",
         duration: 5000
       });
@@ -424,20 +279,19 @@ export default function Page({ params }: PageProps) {
     }
   };
 
-  // Function to publish new version
   const handlePublishVersion = async () => {
     try {
       setIsPublishing(true);
-      const response = await lambdaClient.send(
-        new PublishVersionCommand({
-          FunctionName: functionName,
-          Description: `Published from UI on ${new Date().toISOString()}`
-        })
-      );
-      
+      const response = await fetch(`/api/lambda/${functionName}/publish-version`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: `Published from UI on ${new Date().toISOString()}` }),
+      });
+      if (!response.ok) throw new Error('Failed to publish new version');
+      const data = await response.json();
       toast({
         title: "Success",
-        description: `Published version ${response.Version}`,
+        description: `Published version ${data.version}`,
         duration: 3000
       });
     } catch (error) {
@@ -452,34 +306,33 @@ export default function Page({ params }: PageProps) {
     }
   };
 
-  // Function to create alias
   const handleCreateAlias = async () => {
     try {
       setIsCreatingAlias(true);
-      const response = await lambdaClient.send(
-        new CreateAliasCommand({
-          FunctionName: functionName,
-          Name: aliasName,
-          FunctionVersion: selectedVersion,
-          Description: aliasDescription
-        })
-      );
-      
+      const response = await fetch(`/api/lambda/${functionName}/aliases`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: aliasName,
+          functionVersion: selectedVersion,
+          description: aliasDescription
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to create alias');
       toast({
         title: "Success",
         description: `Created alias ${aliasName}`,
         duration: 3000
       });
       setIsAliasModalOpen(false);
-      // Reset form
       setAliasName('');
       setAliasDescription('');
       setSelectedVersion('$LATEST');
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating alias:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to create alias",
+        description: error instanceof Error ? error.message : "Failed to create alias",
         variant: "destructive"
       });
     } finally {
@@ -487,27 +340,21 @@ export default function Page({ params }: PageProps) {
     }
   };
 
-  // Function to delete function
   const handleDeleteFunction = async () => {
     if (!window.confirm('Are you sure you want to delete this function? This action cannot be undone.')) {
       return;
     }
-
     try {
       setIsDeleting(true);
-      await lambdaClient.send(
-        new DeleteFunctionCommand({
-          FunctionName: functionName
-        })
-      );
-      
+      const response = await fetch(`/api/lambda/functions?functionName=${encodeURIComponent(functionName)}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) throw new Error('Failed to delete function');
       toast({
         title: "Success",
         description: "Function deleted successfully",
         duration: 3000
       });
-      
-      // Redirect to functions list
       window.location.href = '/aws/lambda';
     } catch (error) {
       console.error('Error deleting function:', error);
@@ -521,30 +368,18 @@ export default function Page({ params }: PageProps) {
     }
   };
 
-  // Update the dropdown menu item to fetch versions when opening the modal
-  const handleOpenAliasModal = async () => {
-    await fetchVersions();
-    setIsAliasModalOpen(true);
-  };
-
-  // Add these new functions after the other handler functions
   const handleDownloadFunctionCode = async () => {
     try {
-      const response = await lambdaClient.send(
-        new GetFunctionCommand({
-          FunctionName: functionName
-        })
-      );
-
-      if (response.Code?.Location) {
-        // Create a temporary link to download the file
+      const response = await fetch(`/api/lambda/${functionName}/code`);
+      if (!response.ok) throw new Error('Failed to get function code');
+      const data = await response.json();
+      if (data.codeUrl) {
         const link = document.createElement('a');
-        link.href = response.Code.Location;
+        link.href = data.codeUrl;
         link.download = `${functionName}-code.zip`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-
         toast({
           title: "Success",
           description: "Function code download started",
@@ -553,11 +388,11 @@ export default function Page({ params }: PageProps) {
       } else {
         throw new Error("Function code URL not available");
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error downloading function code:', error);
       toast({
         title: "Error",
-        description: error.message || "Failed to download function code",
+        description: error instanceof Error ? error.message : "Failed to download function code",
         variant: "destructive"
       });
     }
@@ -628,7 +463,6 @@ export default function Page({ params }: PageProps) {
     }
   };
 
-  // Add this new function
   const handleExportToInfrastructure = async (bucketName: string) => {
     try {
       // Here you would implement the actual export logic
@@ -736,7 +570,7 @@ export default function Page({ params }: PageProps) {
                 </DropdownMenu.Item>
                 <DropdownMenu.Item 
                   className="flex cursor-default select-none items-center px-3 py-2 text-sm outline-none focus:bg-gray-100"
-                  onClick={handleOpenAliasModal}
+                  onClick={() => setIsAliasModalOpen(true)}
                 >
                   Create alias
                 </DropdownMenu.Item>
@@ -875,24 +709,39 @@ export default function Page({ params }: PageProps) {
                     <div className="mt-6 space-y-3">
                       {triggers.map((trigger) => (
                         <div
-                          key={trigger.id}
+                          key={trigger.uuid || trigger.apiId || trigger.type}
                           className="flex items-center gap-4 p-4 border rounded-xl bg-white hover:shadow-md transition-all duration-300"
                         >
                           <div className="p-2.5 rounded-lg bg-gradient-to-br from-gray-50 to-gray-100">
-                            {trigger.icon}
+                            {/* Icon logic can be improved based on type */}
+                            {trigger.type === 'API Gateway' ? <Globe className="w-6 h-6 text-blue-600" /> : <Database className="w-6 h-6 text-green-600" />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-gray-900">{trigger.name}</div>
-                            <div className="text-sm text-gray-500 truncate">{trigger.details}</div>
+                            <div className="font-medium text-gray-900">{trigger.type}</div>
+                            {trigger.type === 'API Gateway' ? (
+                              <div className="text-sm text-gray-500">
+                                <div><strong>Name:</strong> {trigger.name}</div>
+                                <div><strong>Endpoint:</strong> {trigger.endpoint}</div>
+                                <div><strong>Protocol:</strong> {trigger.protocolType}</div>
+                              </div>
+                            ) : (
+                              <div className="text-sm text-gray-500">
+                                <div><strong>ARN:</strong> {trigger.arn}</div>
+                                <div><strong>State:</strong> {trigger.state}</div>
+                                <div><strong>Batch size:</strong> {trigger.batchSize}</div>
+                              </div>
+                            )}
                           </div>
                           <div>
-                            <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                              trigger.status === 'Active' 
-                                ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700' 
-                                : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700'
-                            }`}>
-                              {trigger.status}
-                            </span>
+                            {trigger.state && (
+                              <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                trigger.state === 'Enabled' || trigger.state === 'Active'
+                                  ? 'bg-gradient-to-r from-green-100 to-emerald-100 text-green-700'
+                                  : 'bg-gradient-to-r from-gray-100 to-gray-200 text-gray-700'
+                              }`}>
+                                {trigger.state || 'Active'}
+                              </span>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -984,7 +833,7 @@ export default function Page({ params }: PageProps) {
                 <div className="space-y-2">
                   {triggers.length > 0 ? (
                     triggers.map((trigger) => (
-                      <div key={trigger.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/80 hover:bg-white transition-all duration-200">
+                      <div key={trigger.type} className="flex items-center gap-2 p-2 rounded-lg bg-white/80 hover:bg-white transition-all duration-200">
                         <div className="p-1.5 rounded-md bg-gradient-to-br from-gray-50 to-gray-100">
                           {trigger.icon}
                         </div>

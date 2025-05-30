@@ -6,6 +6,7 @@ import { Input } from "@/app/components/ui/input";
 import { ScrollArea } from "@/app/components/ui/scroll-area";
 import { Search } from 'lucide-react';
 import { useState, useMemo } from 'react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select';
 
 interface TriggerOption {
   id: string;
@@ -126,6 +127,16 @@ export interface AddTriggerModalProps {
 
 export function AddTriggerModal({ isOpen, onClose, onAddTrigger }: AddTriggerModalProps) {
   const [searchQuery, setSearchQuery] = useState('');
+  const [step, setStep] = useState(1);
+  const [selectedTrigger, setSelectedTrigger] = useState<TriggerOption | null>(null);
+  // API Gateway config state
+  const [apiGatewayConfig, setApiGatewayConfig] = useState({
+    intent: 'create',
+    apiType: 'http',
+    security: 'open',
+    cors: true,
+    stage: '',
+  });
 
   const filteredOptions = useMemo(() => {
     const query = searchQuery.toLowerCase();
@@ -140,70 +151,139 @@ export function AddTriggerModal({ isOpen, onClose, onAddTrigger }: AddTriggerMod
     return groupByCategory(filteredOptions);
   }, [filteredOptions]);
 
+  const handleTriggerSelect = (option: TriggerOption) => {
+    if (option.id === 'api-gateway') {
+      setSelectedTrigger(option);
+      setStep(2);
+    } else {
+      onAddTrigger(option.id, option.name);
+      onClose();
+    }
+  };
+
+  const handleApiGatewaySubmit = async () => {
+    await onAddTrigger('api-gateway', JSON.stringify(apiGatewayConfig));
+    setStep(1);
+    setSelectedTrigger(null);
+    onClose();
+  };
+
+  const handleBack = () => {
+    setStep(1);
+    setSelectedTrigger(null);
+  };
+
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[80vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Add trigger</DialogTitle>
         </DialogHeader>
-
-        <div className="flex-1 overflow-hidden">
-          <div className="p-4 border-b">
-            <h2 className="text-base font-medium mb-2 flex items-center gap-2">
-              Trigger configuration
-              <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2"/>
-                <path d="M12 16V12M12 8H12.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-            </h2>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <Input 
-                placeholder="Search triggers..." 
-                className="pl-9 bg-white"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <ScrollArea className="flex-1 h-[400px] p-4">
-            {Object.entries(groupedOptions).map(([category, options]) => (
-              <div key={category} className="mb-6">
-                <h3 className="text-sm font-medium text-gray-500 mb-2">{category}</h3>
-                <div className="space-y-2">
-                  {options.map((option) => (
-                    <button
-                      key={option.id}
-                      onClick={() => onAddTrigger(option.id, option.name)}
-                      className="w-full flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left group"
-                    >
-                      <div className="flex-shrink-0">{option.icon}</div>
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-gray-900 group-hover:text-blue-600">
-                          {option.name}
-                        </div>
-                        <div className="text-sm text-gray-500 mt-0.5">
-                          {option.description}
-                        </div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+        {step === 1 && (
+          <div className="flex-1 overflow-hidden">
+            <div className="p-4 border-b">
+              <h2 className="text-base font-medium mb-2 flex items-center gap-2">
+                Trigger configuration
+                <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M12 16V12M12 8H12.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+              </h2>
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                <Input 
+                  placeholder="Search triggers..." 
+                  className="pl-9 bg-white"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
-            ))}
-            {Object.keys(groupedOptions).length === 0 && (
-              <div className="flex flex-col items-center justify-center h-full text-gray-500">
-                <Search className="w-8 h-8 mb-2" />
-                <p>No triggers found matching your search</p>
+            </div>
+            <ScrollArea className="flex-1 h-[400px] p-4">
+              {Object.entries(groupedOptions).map(([category, options]) => (
+                <div key={category} className="mb-6">
+                  <h3 className="text-sm font-medium text-gray-500 mb-2">{category}</h3>
+                  <div className="space-y-2">
+                    {options.map((option) => (
+                      <button
+                        key={option.id}
+                        onClick={() => handleTriggerSelect(option)}
+                        className="w-full flex items-start gap-3 p-3 rounded-lg hover:bg-gray-50 transition-colors text-left group"
+                      >
+                        <div className="flex-shrink-0">{option.icon}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-gray-900 group-hover:text-blue-600">
+                            {option.name}
+                          </div>
+                          <div className="text-sm text-gray-500 mt-0.5">
+                            {option.description}
+                          </div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              {Object.keys(groupedOptions).length === 0 && (
+                <div className="flex flex-col items-center justify-center h-full text-gray-500">
+                  <Search className="w-8 h-8 mb-2" />
+                  <p>No triggers found matching your search</p>
+                </div>
+              )}
+            </ScrollArea>
+          </div>
+        )}
+        {step === 2 && selectedTrigger?.id === 'api-gateway' && (
+          <div className="space-y-4 p-4">
+            <h3 className="text-lg font-semibold mb-2">API Gateway Configuration</h3>
+            <div>
+              <label className="block text-sm font-medium mb-1">Intent</label>
+              <Select value={apiGatewayConfig.intent} onValueChange={v => setApiGatewayConfig(s => ({ ...s, intent: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="create">Create a new API</SelectItem>
+                  <SelectItem value="existing">Use existing API</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">API Type</label>
+              <Select value={apiGatewayConfig.apiType} onValueChange={v => setApiGatewayConfig(s => ({ ...s, apiType: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="http">HTTP API</SelectItem>
+                  <SelectItem value="websocket">WebSocket API</SelectItem>
+                  <SelectItem value="rest">REST API</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Security</label>
+              <Select value={apiGatewayConfig.security} onValueChange={v => setApiGatewayConfig(s => ({ ...s, security: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="iam">IAM</SelectItem>
+                  <SelectItem value="jwt">JWT Authorizer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Enable CORS</label>
+              <input type="checkbox" checked={apiGatewayConfig.cors} onChange={e => setApiGatewayConfig(s => ({ ...s, cors: e.target.checked }))} />
+            </div>
+            {apiGatewayConfig.apiType === 'rest' && (
+              <div>
+                <label className="block text-sm font-medium mb-1">Stage Name</label>
+                <Input value={apiGatewayConfig.stage} onChange={e => setApiGatewayConfig(s => ({ ...s, stage: e.target.value }))} />
               </div>
             )}
-          </ScrollArea>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 pt-4 border-t">
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        </div>
+            <div className="flex gap-2 mt-4 justify-end">
+              <Button variant="outline" onClick={handleBack}>Back</Button>
+              <Button onClick={handleApiGatewaySubmit}>Add Trigger</Button>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
