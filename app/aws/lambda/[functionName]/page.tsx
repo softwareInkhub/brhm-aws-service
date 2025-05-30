@@ -210,30 +210,28 @@ export default function Page({ params }: PageProps) {
     }
   }, [functionName]);
 
-  const handleAddTrigger = async (triggerType: string, source: string) => {
-    try {
+  const handleAddTrigger = async (triggerType: string, config: any) => {
+    if (triggerType === 'api-gateway') {
+      await fetch(`/api/lambda/${functionName}/triggers`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config),
+      });
+      fetchTriggers();
+    } else {
       const newTrigger: Trigger = {
         type: triggerType,
         status: 'Active',
         name: `${triggerType} Trigger`,
-        details: `Trigger from ${source}`,
+        details: `Trigger from ${config}`,
         icon: getSourceTypeIcon(triggerType)
       };
-
       setTriggers(prevTriggers => [...prevTriggers, newTrigger]);
       setIsTriggerModalOpen(false);
-      
       toast({
         title: "Success",
         description: `Added new ${triggerType} trigger`,
         duration: 3000
-      });
-    } catch (error) {
-      console.error('Error adding trigger:', error);
-      toast({
-        title: "Error",
-        description: "Failed to add trigger",
-        variant: "destructive"
       });
     }
   };

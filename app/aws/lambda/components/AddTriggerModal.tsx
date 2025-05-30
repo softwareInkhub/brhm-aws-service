@@ -162,7 +162,7 @@ export function AddTriggerModal({ isOpen, onClose, onAddTrigger }: AddTriggerMod
   };
 
   const handleApiGatewaySubmit = async () => {
-    await onAddTrigger('api-gateway', JSON.stringify(apiGatewayConfig));
+    await onAddTrigger('api-gateway', apiGatewayConfig);
     setStep(1);
     setSelectedTrigger(null);
     onClose();

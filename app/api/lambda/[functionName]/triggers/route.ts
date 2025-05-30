@@ -86,10 +86,10 @@ export async function GET(
             httpMethod: method,
           }));
           console.log('Resource:', resource.path, 'Method:', method, 'Integration URI:', integration.uri);
+          const expectedUri = `arn:aws:apigateway:${process.env.AWS_REGION}:lambda:path/2015-03-31/functions/${lambdaArn}/invocations`;
           if (
             (integration.type === 'AWS' || integration.type === 'AWS_PROXY') &&
-            integration.uri &&
-            integration.uri.includes(lambdaArn)
+            integration.uri === expectedUri
           ) {
             triggers.push({
               type: 'API Gateway (REST)',
