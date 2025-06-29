@@ -40,29 +40,44 @@ export async function POST(request: NextRequest) {
       const data = await request.json();
       const { functionName, runtime, handler, role, code, description, memory, timeout } = data;
 
+      // Use a basic execution role - this should exist in all AWS accounts
+      const executionRole = role || 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole';
+
+      console.log('Creating Lambda function with config:', {
+        functionName,
+        runtime,
+        handler,
+        role: executionRole,
+        memory: memory || 128,
+        timeout: timeout || 30
+      });
+
       const command = new CreateFunctionCommand({
         FunctionName: functionName,
         Runtime: runtime,
         Handler: handler,
-        Role: role,
+        Role: executionRole,
         Code: {
-          ZipFile: Buffer.from(code, 'utf-8'),
+          ZipFile: Buffer.from(code || 'exports.handler = async (event) => { return { statusCode: 200, body: "Hello World" }; };', 'utf-8'),
         },
-        Description: description,
-        MemorySize: memory,
-        Timeout: timeout,
+        Description: description || `Function created for ${functionName}`,
+        MemorySize: memory || 128,
+        Timeout: timeout || 30,
       });
 
       const response = await lambdaClient.send(command);
       
+      console.log('Lambda function created successfully:', response.FunctionArn);
+      
       return NextResponse.json({
         error: false,
+        functionArn: response.FunctionArn,
         data: response,
       });
     } catch (error) {
       console.error('Error creating Lambda function:', error);
       return NextResponse.json(
-        { error: true, message: 'Failed to create Lambda function' },
+        { error: true, message: error instanceof Error ? error.message : 'Failed to create Lambda function' },
         { status: 500 }
       );
     }
