@@ -730,7 +730,7 @@ export default function Page({ params }: PageProps) {
                                 <div><strong>Name:</strong> {trigger.name}</div>
                                 <div><strong>Resource:</strong> {trigger.resourcePath}</div>
                                 <div><strong>Method:</strong> {trigger.method}</div>
-                                <div><strong>URI:</strong> {trigger.uri}</div>
+                                <div><strong>Endpoint:</strong> {trigger.endpoint}</div>
                               </div>
                             ) : (
                               <div className="text-sm text-gray-500">
@@ -852,6 +852,7 @@ export default function Page({ params }: PageProps) {
                               <div><strong>Name:</strong> {trigger.name}</div>
                               <div><strong>Resource:</strong> {trigger.resourcePath}</div>
                               <div><strong>Method:</strong> {trigger.method}</div>
+                              <div><strong>Endpoint:</strong> {trigger.endpoint}</div>
                             </div>
                           ) : trigger.type === 'API Gateway' ? (
                             <div className="text-xs text-gray-500 truncate">

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LambdaClient, ListEventSourceMappingsCommand } from '@aws-sdk/client-lambda';
 import { ApiGatewayV2Client, GetApisCommand, CreateApiCommand, CreateIntegrationCommand, CreateRouteCommand, CreateStageCommand, GetIntegrationsCommand } from '@aws-sdk/client-apigatewayv2';
 import { AddPermissionCommand } from '@aws-sdk/client-lambda';
-import { APIGatewayClient, GetRestApisCommand, GetResourcesCommand, GetIntegrationCommand } from '@aws-sdk/client-api-gateway';
+import { APIGatewayClient, GetRestApisCommand, GetResourcesCommand, GetIntegrationCommand, GetStagesCommand } from '@aws-sdk/client-api-gateway';
 
 export async function GET(
   request: NextRequest,
@@ -91,18 +91,43 @@ export async function GET(
             (integration.type === 'AWS' || integration.type === 'AWS_PROXY') &&
             integration.uri === expectedUri
           ) {
+            // Get the actual stage name from the API Gateway
+            let stageName = 'default';
+            try {
+              const stagesResponse = await apiGatewayV1Client.send(new GetStagesCommand({
+                restApiId: restApi.id!,
+              }));
+              // Use the first deployed stage, or 'default' if none found
+              const deployedStage = stagesResponse.item?.find(stage => stage.deploymentId);
+              if (deployedStage) {
+                stageName = deployedStage.stageName || 'default';
+              }
+            } catch (err) {
+              console.log('Could not fetch stages, using default stage name:', err);
+            }
+            
+            // Construct the public API Gateway endpoint URL
+            const region = process.env.AWS_REGION || 'us-east-1';
+            const apiId = restApi.id;
+            const publicEndpoint = `https://${apiId}.execute-api.${region}.amazonaws.com/${stageName}${resource.path}`;
+            
             triggers.push({
               type: 'API Gateway (REST)',
               name: restApi.name,
               apiId: restApi.id,
               resourcePath: resource.path,
               method,
+              endpoint: publicEndpoint,
               uri: integration.uri,
             });
           }
         }
       }
     }
+
+    // --- Function URL triggers ---
+    // Note: Function URLs are intentionally excluded from trigger display
+    // Only API Gateway and event source mappings are shown
 
     console.log('Returning triggers:', triggers);
     return NextResponse.json({ triggers });
